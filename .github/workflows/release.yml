@@ -26,11 +26,21 @@ jobs:
       - name: Build
         run: mvn --no-transfer-progress package -DskipTests
 
+      - name: Package zip
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          mkdir dist
+          cp target/clipper-${VERSION}.jar dist/clipper.jar
+          cp scripts/clipper.sh dist/
+          cp scripts/clipper.bat dist/
+          chmod +x dist/clipper.sh
+          zip -j clipper-${VERSION}.zip dist/clipper.jar dist/clipper.sh dist/clipper.bat
+
       - name: Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            target/clipper-*.jar \
+            clipper-${GITHUB_REF_NAME#v}.zip \
             --title "$GITHUB_REF_NAME" \
             --generate-notes
