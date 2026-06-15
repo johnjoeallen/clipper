@@ -162,6 +162,7 @@
 <div class="post">
 
     <header class="post-header">
+        <a class="site-title" href="/">Clipper</a>
         <div class="post-header-text">
             <h1 class="post-title">
                 <span th:text="${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}"></span><!--
@@ -172,7 +173,6 @@
                       title="View original">&#x2197;</a>
             </h1>
         </div>
-        <a class="site-title" href="/">Clipper</a>
         <a class="btn-edit" th:href="@{/post/{id}/edit(id=${post.id()})}">Edit</a>
         <button id="theme-toggle" onclick="toggleTheme()"></button>
     </header>
