@@ -1,6 +1,6 @@
 # Clipper
 
-A browser bookmarklet and Spring Boot composer for clipping web pages. Click the bookmarklet on any page and Clipper captures the title, URL, Open Graph metadata, tags, selected text, and candidate images directly from the DOM — no server-side scraping required. A two-step popup composer lets you review and curate the clip before submitting.
+A browser bookmarklet and Spring Boot composer for clipping web pages. Click the bookmarklet on any page and Clipper captures the title, URL, Open Graph metadata, tags, selected text, and candidate images directly from the DOM — no server-side scraping required. A two-step popup composer lets you review and curate the clip before submitting. When you save, Clipper downloads and caches the selected images locally so saved cards render from your own copy — independent of the original site.
 
 ---
 
@@ -14,6 +14,8 @@ A browser bookmarklet and Spring Boot composer for clipping web pages. Click the
 6. The composer popup opens in two steps:
    - **Step 1 — Edit:** Review and edit the captured text, manage tags, and select one or more images from the candidate grid.
    - **Step 2 — Preview:** See how the card will look, with all selected images displayed together, then submit.
+7. On submit, the server downloads and caches each selected image locally, then saves the post to SQLite.
+8. The saved post page (`GET /post/{id}`) renders entirely from cached local images — no dependency on the original site.
 
 ---
 
@@ -46,10 +48,10 @@ Tags are aggregated from multiple sources and deduplicated (lowercased, max 100 
 
 ### Image collection and filtering
 
-Images are collected from the OG image tag (highest priority) and all `<img src>` elements on the page. Images are filtered aggressively:
+Images are collected from the OG image tag (highest priority) and all `<img src>` elements on the page. Images are filtered to remove obvious icons and tracking pixels:
 
-- At collection time: any image with a known dimension below **300px** is dropped before the payload is sent to the server.
-- After rendering in the composer grid: the `onload` handler checks true natural dimensions and hides any image below **300px** in either dimension.
+- At collection time in the bookmarklet: images where **both** known dimensions are below **300 px** are dropped before the payload is sent to the server.
+- After rendering in the composer grid: the `onload` handler checks true natural dimensions and hides any image where **both** dimensions are below **300 px**.
 - Broken images (CORS errors, 404s) are hidden via `onerror`.
 - Up to 20 images reach the server; the grid shows whichever pass the size filter.
 
@@ -64,11 +66,51 @@ Images are collected from the OG image tag (highest priority) and all `<img src>
 **Step 2** shows the preview card:
 - All selected images displayed in a responsive grid (no pagination)
 - Title, body text, and source link
-- Back button to return and adjust; Submit button to post the clip
+- Back button to return and adjust; Submit button to save the clip
+
+### Image caching
+
+When the user submits in Step 2, the server caches all selected images before saving the post. This decouples saved posts from the original site — images continue to display even if the source site moves, hotlink-blocks, or deletes them.
+
+**Download safety:**
+- Only `http` and `https` URLs are accepted; `file:`, `data:`, `javascript:`, and other schemes are rejected.
+- Hostnames are resolved before connecting; private, loopback, link-local, and CGNAT addresses are blocked to prevent SSRF.
+- Redirects are followed up to a configurable limit, with the same address checks applied at each hop.
+- Downloads are capped at a configurable maximum size (default 10 MB).
+- The `Content-Type` header must begin with `image/`; SVG is rejected.
+- The downloaded bytes are decoded with `ImageIO` to confirm they are a valid image.
+
+**Storage:**
+- Files are written atomically: the server downloads to a temp file, validates, then moves into place.
+- Filenames are derived from the SHA-256 of the downloaded bytes (e.g. `a3f8...c2.jpg`); the original filename is not used.
+- Duplicate images (same bytes, different URLs) are deduplicated by checksum — only one file is stored.
+- A thumbnail is generated alongside each original (default max dimension: 400 px).
+- Image metadata (original URL, local path, thumbnail path, dimensions, content type, checksum, cache status) is stored in SQLite.
+
+**On failure:**
+- If any selected image cannot be cached, the save is aborted and the composer displays a per-image error. The user can go back, deselect the failing image, and retry.
+
+**File layout:**
+
+```
+~/.clipper/
+  clipper.db            # SQLite database (posts + image metadata)
+  images/
+    originals/          # Full-size cached images (<sha256>.<ext>)
+    thumbnails/         # Resized copies (<sha256>.<ext>)
+```
+
+### Saved post view
+
+`GET /post/{id}` renders the saved post using only cached local image URLs. It shows:
+- Page title and original URL
+- Cached images (thumbnails where available, originals otherwise)
+- Selected / edited body text
+- Tags
 
 ### Theme
 
-The composer supports a dark and light theme with a toggle button in the header. The preference is persisted in `localStorage`.
+The composer and post view support dark and light themes with a toggle button in the header. The preference is persisted in `localStorage`.
 
 ### Full-text index data
 
@@ -83,8 +125,11 @@ Every composer page includes a hidden `#clip-index-data` element containing all 
 | Server | Spring Boot 3.3 · Java 17 |
 | Templates | Thymeleaf |
 | Bookmarklet | Vanilla JS (ES5, no dependencies) |
-| Storage | In-memory `ConcurrentHashMap` with 1-hour TTL |
-| Tests | JUnit 5 + MockMvc |
+| Clip store | In-memory `ConcurrentHashMap` with 1-hour TTL |
+| Post store | SQLite via Spring JDBC (`~/.clipper/clipper.db`) |
+| Image cache | Local filesystem (`~/.clipper/images/`) |
+| Thumbnails | Thumbnailator |
+| Tests | JUnit 5 + MockMvc + Mockito |
 
 ---
 
@@ -116,13 +161,33 @@ Replace `http://localhost:8080` with your deployed app's base URL. The bookmarkl
 
 ---
 
+## Configuration
+
+All settings are in `application.properties`. The defaults are shown below.
+
+```properties
+# Directory for the SQLite database and image cache
+clipper.data-dir=${user.home}/.clipper
+
+# Image download limits
+clipper.image.max-bytes=10485760          # 10 MB
+clipper.image.connect-timeout-ms=10000   # 10 s
+clipper.image.read-timeout-ms=30000      # 30 s
+clipper.image.max-redirects=5
+
+# Set true to allow downloading from localhost/private IPs (development only)
+clipper.image.allow-private-addresses=false
+```
+
+---
+
 ## Running the tests
 
 ```bash
 mvn test
 ```
 
-Tests use JUnit 5 and MockMvc and do not require a running server.
+Tests use JUnit 5, MockMvc, and Mockito and do not require a running server. Integration tests write to `/tmp/clipper-test`. `ImageCacheServiceTest` starts an embedded JDK HTTP server to exercise the full download and caching path.
 
 ---
 
@@ -164,13 +229,55 @@ Accepts a JSON payload and returns a compose URL.
 
 Opens the composer page for the given clip ID. Returns 404 if the clip has expired (> 1 hour) or never existed.
 
+### `POST /clip/{id}/save`
+
+Caches the selected images and saves the post to SQLite. Returns 422 if any image fails to cache.
+
+**Request body**
+
+```json
+{
+  "selectedImages": [
+    { "src": "https://example.com/image.jpg", "alt": "A photo", "kind": "og_image", "rankOrder": 0 }
+  ],
+  "selectedText": "Edited body text",
+  "tags": ["java", "spring"]
+}
+```
+
+**Response**
+
+```json
+{
+  "postId": "661f9511-...",
+  "postUrl": "/post/661f9511-..."
+}
+```
+
+**Error response (422)**
+
+```json
+{
+  "error": "Image caching failed",
+  "details": ["https://example.com/image.jpg: HTTP 403"]
+}
+```
+
+### `GET /post/{id}`
+
+Renders the saved post page. All images are served from the local cache.
+
+### `GET /images/originals/{filename}`
+### `GET /images/thumbnails/{filename}`
+
+Serves cached image files. Responses include `Cache-Control: public, max-age=31536000, immutable`.
+
 ---
 
 ## Known limitations
 
 - **DOM-only capture** — the bookmarklet collects what is present in the loaded DOM. Lazy-loaded or JS-rendered content that has not yet appeared may be missed.
-- **Image hotlinking** — some CDNs block cross-origin image loads. Broken images are hidden automatically but cannot be recovered.
+- **Image hotlinking** — candidate images in the composer are loaded from their original remote URLs before save. Some CDNs block cross-origin loads; broken images are hidden automatically.
 - **Popup blocker** — browsers may block the popup if the fetch takes too long. Whitelist your Clipper host in popup settings if this happens.
-- **No persistence** — clips are stored in memory only. Restarting the server clears all clips. Selected image state is client-side and is not saved.
-- **No authentication** — any request with a valid `clipId` can view the composer. Do not use in a shared environment until auth is added.
-- **No final submit** — the composer is display-only at this stage. Posting the clip to an external service is planned for a future stage.
+- **Clip TTL** — unsaved clips are stored in memory only and expire after 1 hour. Restarting the server also clears them.
+- **No authentication** — any request with a valid ID can view a composer page or saved post. Do not use in a shared environment until auth is added.
