@@ -89,8 +89,7 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            text-decoration: none;
-            color: inherit;
+            cursor: pointer;
             transition: box-shadow 0.15s, transform 0.15s;
         }
         .card:hover {
@@ -164,9 +163,21 @@
         }
 
         .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             padding: 10px 16px 14px;
             border-top: 1px solid var(--border);
         }
+
+        .card-edit {
+            color: var(--label);
+            text-decoration: none;
+            font-size: 0.9rem;
+            line-height: 1;
+            opacity: 0.7;
+        }
+        .card-edit:hover { color: var(--accent); opacity: 1; }
 
         .card-date {
             font-size: 0.73rem;
@@ -196,9 +207,11 @@
 
 <!-- Card grid -->
 <div class="grid" th:if="${!posts.isEmpty()}">
-    <a class="card"
-       th:each="post : ${posts}"
-       th:href="@{/post/{id}(id=${post.id()})}">
+    <div class="card"
+         th:each="post : ${posts}"
+         th:onclick="|window.location='@{/post/{id}(id=${post.id()})}'|"
+         role="link" tabindex="0"
+         th:attr="aria-label=${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}">
 
         <!-- Primary image (first cached image, thumbnail preferred) -->
         <img class="card-image"
@@ -231,8 +244,12 @@
         <div class="card-footer">
             <span class="card-date"
                   th:text="${post.createdAt().length() >= 10 ? post.createdAt().substring(0, 10) : ''}"></span>
+            <a class="card-edit"
+               th:href="@{/post/{id}/edit(id=${post.id()})}"
+               onclick="event.stopPropagation()"
+               title="Edit">&#9998;</a>
         </div>
-    </a>
+    </div>
 </div>
 
 <!-- Empty state -->

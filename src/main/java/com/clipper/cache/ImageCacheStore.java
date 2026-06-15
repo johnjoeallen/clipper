@@ -104,6 +104,16 @@ public class ImageCacheStore {
                 p.selectedText(), p.description(), p.tags(), p.createdAt(), images));
     }
 
+    public void updatePost(String id, String title, String selectedText, List<String> tags) {
+        String tagsJson;
+        try { tagsJson = mapper.writeValueAsString(tags); }
+        catch (Exception e) { tagsJson = "[]"; }
+        jdbc.update("""
+                UPDATE posts SET title = ?, og_title = '', selected_text = ?, tags = ?
+                WHERE id = ?""",
+                title, selectedText, tagsJson, id);
+    }
+
     public List<SavedPost> findAllPosts() {
         List<SavedPost> posts = jdbc.query("""
                 SELECT id, clip_id, url, title, og_title, selected_text, description, tags, created_at

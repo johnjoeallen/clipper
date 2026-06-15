@@ -64,6 +64,21 @@
         }
         .post-link-icon:hover { opacity: 1; }
 
+        .btn-edit {
+            flex-shrink: 0;
+            background: none;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            font-family: inherit;
+            cursor: pointer;
+            margin-top: 3px;
+            text-decoration: none;
+        }
+        .btn-edit:hover { color: var(--text); border-color: var(--text-muted); }
+
         #theme-toggle {
             flex-shrink: 0;
             background: var(--surface);
@@ -146,6 +161,7 @@
                       title="View original">&#x2197;</a>
             </h1>
         </div>
+        <a class="btn-edit" th:href="@{/post/{id}/edit(id=${post.id()})}">Edit</a>
         <button id="theme-toggle" onclick="toggleTheme()"></button>
     </header>
 

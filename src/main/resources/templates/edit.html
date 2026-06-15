@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit — Clipper</title>
+    <style>
+        :root {
+            --bg:               #1e2130;
+            --surface:          #262b3d;
+            --input-bg:         #1c2030;
+            --border:           #363d58;
+            --text:             #dde0f0;
+            --text-muted:       #8890b0;
+            --label:            #606880;
+            --accent:           #5a9af5;
+            --accent-hover:     #3d70e0;
+            --tag-bg:           #1f2e52;
+            --tag-text:         #6ea8fe;
+            --btn-sec-bg:       #363d58;
+            --btn-sec-text:     #c8cad8;
+            --btn-sec-hover:    #454d6e;
+            --shadow:           rgba(0,0,0,0.32);
+        }
+        [data-theme="light"] {
+            --bg:               #f0f2f5;
+            --surface:          #ffffff;
+            --input-bg:         #ffffff;
+            --border:           #e0e0e0;
+            --text:             #1a1a1a;
+            --text-muted:       #555555;
+            --label:            #999999;
+            --accent:           #0057d9;
+            --accent-hover:     #0048b8;
+            --tag-bg:           #e8f0fe;
+            --tag-text:         #0057d9;
+            --btn-sec-bg:       #e8eaed;
+            --btn-sec-text:     #333333;
+            --btn-sec-hover:    #d8dadd;
+            --shadow:           rgba(0,0,0,0.08);
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 16px;
+            font-size: 15px;
+            line-height: 1.5;
+        }
+        .editor { max-width: 840px; margin: 0 auto; }
+
+        .edit-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .edit-header h1 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin: 0;
+            flex: 1;
+        }
+        #theme-toggle {
+            background: var(--btn-sec-bg);
+            color: var(--btn-sec-text);
+            border: none;
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        #theme-toggle:hover { background: var(--btn-sec-hover); }
+
+        .section {
+            background: var(--surface);
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 4px var(--shadow);
+        }
+        .section-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--label);
+            margin: 0 0 10px;
+        }
+
+        .text-input {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            color: var(--text);
+            background: var(--input-bg);
+            line-height: 1.6;
+            outline: none;
+            transition: border-color 0.12s, box-shadow 0.12s;
+        }
+        .text-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(90,154,245,0.15);
+        }
+        textarea.text-input {
+            min-height: 140px;
+            resize: vertical;
+        }
+
+        /* ── Tags ── */
+        .tag-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+        .tag-input {
+            flex: 1;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-family: inherit;
+            font-size: 0.875rem;
+            color: var(--text);
+            background: var(--input-bg);
+            outline: none;
+            transition: border-color 0.12s, box-shadow 0.12s;
+        }
+        .tag-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(90,154,245,0.15);
+        }
+        .tag-input::placeholder { color: var(--label); }
+        .tag-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+        .tag-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            border-radius: 100px;
+            padding: 3px 8px 3px 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .tag-remove {
+            background: none; border: none; cursor: pointer;
+            color: var(--tag-text); padding: 0; font-size: 1.1rem;
+            line-height: 1; opacity: 0.6; display: flex; align-items: center;
+        }
+        .tag-remove:hover { opacity: 1; }
+
+        /* ── Actions ── */
+        .actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 4px;
+            margin-bottom: 16px;
+        }
+        .btn {
+            padding: 10px 22px;
+            border-radius: 7px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: background 0.12s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-secondary { background: var(--btn-sec-bg); color: var(--btn-sec-text); }
+        .btn-secondary:hover { background: var(--btn-sec-hover); }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+    </style>
+</head>
+<body>
+<div class="editor">
+
+    <header class="edit-header">
+        <h1>Edit clip</h1>
+        <button id="theme-toggle" onclick="toggleTheme()"></button>
+    </header>
+
+    <form th:action="@{/post/{id}/edit(id=${post.id()})}" method="post"
+          onsubmit="serializeTags()">
+
+        <input type="hidden" name="tagsJson" id="tags-json">
+
+        <section class="section">
+            <h2 class="section-label">Title</h2>
+            <input class="text-input"
+                   type="text"
+                   name="title"
+                   th:value="${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}">
+        </section>
+
+        <section class="section">
+            <h2 class="section-label">Body Text</h2>
+            <textarea class="text-input"
+                      name="selectedText"
+                      th:text="${post.selectedText()}"></textarea>
+        </section>
+
+        <section class="section">
+            <h2 class="section-label">Tags</h2>
+            <div class="tag-input-row">
+                <input class="tag-input" id="tag-input" type="text"
+                       placeholder="Type a tag and press Enter or comma&hellip;">
+            </div>
+            <div class="tag-chips" id="tag-chips"></div>
+        </section>
+
+        <div class="actions">
+            <a class="btn btn-secondary" th:href="@{/post/{id}(id=${post.id()})}">Cancel</a>
+            <button class="btn btn-primary" type="submit">Save</button>
+        </div>
+
+    </form>
+</div>
+
+<script th:inline="javascript">
+    /* ── Theme ── */
+    var _theme = localStorage.getItem('clipper-theme') || 'dark';
+    function applyTheme(t) {
+        _theme = t;
+        document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : '');
+        document.getElementById('theme-toggle').textContent = t === 'light' ? '☾ Dark' : '☀ Light';
+        localStorage.setItem('clipper-theme', t);
+    }
+    function toggleTheme() { applyTheme(_theme === 'light' ? 'dark' : 'light'); }
+    applyTheme(_theme);
+
+    /* ── Tags ── */
+    var _tags = /*[[${post.tags()}]]*/ [];
+
+    function addTag(raw) {
+        raw.split(',').forEach(function(part) {
+            var tag = part.trim().toLowerCase();
+            if (tag && !_tags.includes(tag)) _tags.push(tag);
+        });
+        renderTags();
+    }
+    function removeTag(tag) {
+        _tags = _tags.filter(function(t) { return t !== tag; });
+        renderTags();
+    }
+    function renderTags() {
+        var container = document.getElementById('tag-chips');
+        container.innerHTML = '';
+        _tags.forEach(function(tag) {
+            var chip = document.createElement('span');
+            chip.className = 'tag-chip';
+            var label = document.createTextNode(tag);
+            var btn   = document.createElement('button');
+            btn.className   = 'tag-remove';
+            btn.type        = 'button';
+            btn.textContent = '×';
+            btn.setAttribute('aria-label', 'Remove ' + tag);
+            btn.addEventListener('click', function() { removeTag(tag); });
+            chip.appendChild(label);
+            chip.appendChild(btn);
+            container.appendChild(chip);
+        });
+    }
+    function serializeTags() {
+        document.getElementById('tags-json').value = JSON.stringify(_tags);
+    }
+
+    renderTags();
+
+    var tagInput = document.getElementById('tag-input');
+    tagInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            if (this.value.trim()) { addTag(this.value); this.value = ''; }
+        }
+    });
+    tagInput.addEventListener('blur', function() {
+        if (this.value.trim()) { addTag(this.value); this.value = ''; }
+    });
+</script>
+</body>
+</html>
