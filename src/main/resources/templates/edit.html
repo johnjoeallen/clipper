@@ -68,13 +68,17 @@
         }
         .site-title {
             flex-shrink: 0;
-            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.95rem;
             font-weight: 700;
             letter-spacing: -0.02em;
             color: var(--text-muted);
             text-decoration: none;
         }
         .site-title:hover { color: var(--text); }
+        .site-title svg { flex-shrink: 0; }
         #theme-toggle {
             background: var(--btn-sec-bg);
             color: var(--btn-sec-text);
@@ -278,7 +282,17 @@
 <div class="editor">
 
     <header class="edit-header">
-        <a class="site-title" href="/">Clipper</a>
+        <a class="site-title" href="/" title="Home">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 18" fill="currentColor" aria-hidden="true" style="width:1.4em;height:1em">
+                <path d="M1 14L3 18H23L25 14H1Z"/>
+                <rect x="11" y="0" width="1.5" height="14"/>
+                <rect x="16.5" y="3" width="1.5" height="11"/>
+                <path d="M11 1L11 13L3 12Z"/>
+                <path d="M12.5 1L12.5 13L16.5 12L16.5 4Z"/>
+                <path d="M18 4L18 13L23 12Z"/>
+            </svg>
+            Clipper
+        </a>
         <h1>Edit clip</h1>
         <button id="theme-toggle" onclick="toggleTheme()"></button>
     </header>

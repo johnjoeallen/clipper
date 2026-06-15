@@ -55,6 +55,9 @@
             margin: 0 auto 24px;
         }
         .topbar-title {
+            display: flex;
+            align-items: center;
+            gap: 7px;
             font-size: 1.3rem;
             font-weight: 700;
             letter-spacing: -0.02em;
@@ -62,6 +65,7 @@
             color: var(--text);
             text-decoration: none;
         }
+        .topbar-title svg { flex-shrink: 0; }
         .search-form {
             flex: 1;
             max-width: 400px;
@@ -236,7 +240,17 @@
 <body>
 
 <div class="topbar">
-    <a class="topbar-title" href="/">Clipper</a>
+    <a class="topbar-title" href="/" title="Home">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 18" fill="currentColor" aria-hidden="true" style="width:1.5em;height:1em">
+            <path d="M1 14L3 18H23L25 14H1Z"/>
+            <rect x="11" y="0" width="1.5" height="14"/>
+            <rect x="16.5" y="3" width="1.5" height="11"/>
+            <path d="M11 1L11 13L3 12Z"/>
+            <path d="M12.5 1L12.5 13L16.5 12L16.5 4Z"/>
+            <path d="M18 4L18 13L23 12Z"/>
+        </svg>
+        Clipper
+    </a>
     <form class="search-form" action="/" method="get">
         <input class="search-input" type="search" name="q"
                th:value="${q}"
