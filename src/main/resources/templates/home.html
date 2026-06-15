@@ -245,7 +245,7 @@
         <div class="card-footer">
             <a class="card-source"
                th:href="${post.url()}"
-               th:text="${#uris.extractHost(post.url())}"
+               th:text="${post.host()}"
                target="_blank"
                rel="noopener noreferrer"
                onclick="event.stopPropagation()"></a>

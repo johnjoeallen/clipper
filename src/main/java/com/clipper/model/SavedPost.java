@@ -13,4 +13,9 @@ public record SavedPost(
         List<String> tags,
         String       createdAt,
         List<CachedImage> images
-) {}
+) {
+    public String host() {
+        try { return new java.net.URI(url).getHost(); }
+        catch (Exception e) { return url; }
+    }
+}
