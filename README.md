@@ -1,6 +1,6 @@
 # Clipper
 
-A browser bookmarklet and Spring Boot composer for clipping web pages. Click the bookmarklet on any page and Clipper captures the title, URL, Open Graph metadata, tags, selected text, and candidate images directly from the DOM — no server-side scraping required. A two-step popup composer lets you review and curate the clip before submitting. When you save, Clipper downloads and caches the selected images locally so saved cards render from your own copy — independent of the original site.
+A browser bookmarklet and Spring Boot app for saving web page clips. Click the bookmarklet on any page and Clipper captures the title, URL, Open Graph metadata, tags, selected text, page body text, and candidate images directly from the live DOM — no server-side scraping required. A two-step popup composer lets you review and curate the clip before submitting. When you save, Clipper downloads and caches the selected images locally so saved cards render from your own copy — independent of the original site.
 
 ---
 
@@ -8,13 +8,13 @@ A browser bookmarklet and Spring Boot composer for clipping web pages. Click the
 
 1. You click the **Clip it** bookmarklet on any page.
 2. The bookmarklet injects `clipper.js` from the Clipper server into the page.
-3. `clipper.js` collects metadata, tags, and images from the live DOM and POSTs them to `POST /clip`.
+3. `clipper.js` collects metadata, tags, images, and body text from the live DOM and POSTs them to `POST /clip`.
 4. The server sanitises the payload, stores it in memory with a 1-hour TTL, and returns a `clipId` and a `composeUrl`.
 5. `clipper.js` opens a popup pointing at `GET /clip/{clipId}`.
 6. The composer popup opens in two steps:
    - **Step 1 — Edit:** Review and edit the captured text, manage tags, and select one or more images from the candidate grid.
    - **Step 2 — Preview:** See how the card will look, with all selected images displayed together, then submit.
-7. On submit, the server downloads and caches each selected image locally, then saves the post to SQLite.
+7. On submit, the server caches each selected image locally, then saves the post to SQLite (including page body text for full-text search).
 8. The saved post page (`GET /post/{id}`) renders entirely from cached local images — no dependency on the original site.
 
 ---
@@ -30,11 +30,26 @@ The bookmarklet collects the following fields from every page:
 | `url` | `window.location.href` |
 | `title` | `document.title` |
 | `selectedText` | Active text selection at click time |
+| `pageText` | Visible body text (nav/header/footer/scripts stripped, capped at 100 KB) |
 | `description` | `<meta name="description">` |
 | `canonicalUrl` | `<link rel="canonical">` |
 | `ogTitle` | `<meta property="og:title">` |
 | `ogDescription` | `<meta property="og:description">` |
 | `ogImage` | `<meta property="og:image">` |
+
+All text extraction runs client-side in the browser, so it works behind logins and paywalls without any extra server-side request.
+
+### Full-text search
+
+The home page has a search bar that queries all saved posts via SQLite FTS5. Searching uses the **porter stemmer** (so "running" matches "run") and prefix matching on each word. The FTS index covers:
+
+- Title (OG title if edited, original title otherwise)
+- Selected / edited body text
+- Meta description
+- Tags
+- Page body text (captured at clip time)
+
+Search results are returned in relevance order. Clearing the query (or submitting an empty one) returns all posts in reverse-chronological order.
 
 ### Tag extraction
 
@@ -94,27 +109,37 @@ When the user submits in Step 2, the server caches all selected images before sa
 
 ```
 ~/.clipper/
-  clipper.db            # SQLite database (posts + image metadata)
+  clipper.db            # SQLite database (posts + image metadata + FTS index)
   images/
     originals/          # Full-size cached images (<sha256>.<ext>)
     thumbnails/         # Resized copies (<sha256>.<ext>)
 ```
 
+### Home page
+
+`GET /` shows a card grid of all saved posts, most recent first. Each card shows the primary image (thumbnail preferred), title, excerpt, and tags. Clicking a card opens the post view; the ✎ icon opens the edit page directly. A search bar at the top filters cards via full-text search.
+
 ### Saved post view
 
-`GET /post/{id}` renders the saved post using only cached local image URLs. It shows:
-- Page title and original URL
-- Cached images (thumbnails where available, originals otherwise)
+`GET /post/{id}` renders the saved post using only cached local images. It shows:
+- Page title with an ↗ link icon to the original page
+- Selected cached images (only those marked as selected)
 - Selected / edited body text
 - Tags
+- Home and Edit buttons in the header
+
+### Editing
+
+`GET /post/{id}/edit` opens an edit form. You can:
+- Update the title, body text, and tags
+- Toggle which cached images are shown (click to select/deselect)
+- Fetch fresh image candidates from the original source URL with **Fetch from source** — the server re-fetches and Jsoup-parses the page, returning image candidates you can select to cache and add
+
+Edits save via JSON (`POST /post/{id}/edit`) and re-index the post in the FTS table.
 
 ### Theme
 
-The composer and post view support dark and light themes with a toggle button in the header. The preference is persisted in `localStorage`.
-
-### Full-text index data
-
-Every composer page includes a hidden `#clip-index-data` element containing all text fields (title, OG title, description, OG description, selected text, tags, and image alt texts) for full-text search indexing. URLs are available as `data-url` and `data-canonical` attributes.
+All pages support dark and light themes with a toggle button in the header. The preference is persisted in `localStorage`.
 
 ---
 
@@ -127,8 +152,10 @@ Every composer page includes a hidden `#clip-index-data` element containing all 
 | Bookmarklet | Vanilla JS (ES5, no dependencies) |
 | Clip store | In-memory `ConcurrentHashMap` with 1-hour TTL |
 | Post store | SQLite via Spring JDBC (`~/.clipper/clipper.db`) |
+| Full-text search | SQLite FTS5 with porter stemmer |
 | Image cache | Local filesystem (`~/.clipper/images/`) |
 | Thumbnails | Thumbnailator |
+| HTML parsing | Jsoup (source-image fetch on edit page) |
 | Tests | JUnit 5 + MockMvc + Mockito |
 
 ---
@@ -204,6 +231,7 @@ Accepts a JSON payload and returns a compose URL.
   "url": "https://example.com/article",
   "title": "Article title",
   "selectedText": "Text the user highlighted",
+  "pageText": "Full visible body text of the page (up to 100 KB)",
   "description": "Meta description",
   "canonicalUrl": "https://example.com/article",
   "ogTitle": "OG title",
@@ -248,24 +276,68 @@ Caches the selected images and saves the post to SQLite. Returns 422 if any imag
 **Response**
 
 ```json
-{
-  "postId": "661f9511-...",
-  "postUrl": "/post/661f9511-..."
-}
+{ "postId": "661f9511-...", "postUrl": "/post/661f9511-..." }
 ```
 
-**Error response (422)**
+**Error (422)**
 
 ```json
-{
-  "error": "Image caching failed",
-  "details": ["https://example.com/image.jpg: HTTP 403"]
-}
+{ "error": "Image caching failed", "details": ["https://example.com/image.jpg: HTTP 403"] }
 ```
+
+### `GET /`
+
+Home page. Accepts an optional `?q=` query parameter for full-text search.
 
 ### `GET /post/{id}`
 
 Renders the saved post page. All images are served from the local cache.
+
+### `GET /post/{id}/edit`
+
+Opens the edit form for the post.
+
+### `POST /post/{id}/edit`
+
+Saves edits to a post. Accepts and returns JSON.
+
+**Request body**
+
+```json
+{
+  "title": "Updated title",
+  "selectedText": "Updated body text",
+  "tags": ["java"],
+  "keepImageIds": ["img-uuid-1"],
+  "newImages": [
+    { "src": "https://example.com/new.jpg", "alt": "", "kind": "page_image", "rankOrder": 0 }
+  ]
+}
+```
+
+`keepImageIds` — IDs of existing cached images to keep selected; all others are deselected.  
+`newImages` — source image URLs to download, cache, and add to the post.
+
+**Response**
+
+```json
+{ "postUrl": "/post/661f9511-..." }
+```
+
+### `GET /post/{id}/source-images`
+
+Fetches and Jsoup-parses the post's original URL server-side, returning image candidates. Used by the edit page's **Fetch from source** button.
+
+**Response**
+
+```json
+[
+  { "src": "https://example.com/hero.jpg", "alt": "Hero image", "kind": "og_image", "width": null, "height": null },
+  { "src": "https://example.com/photo.jpg", "alt": "A photo", "kind": "page_image", "width": 800, "height": 600 }
+]
+```
+
+Returns 502 if the source page is unreachable.
 
 ### `GET /images/originals/{filename}`
 ### `GET /images/thumbnails/{filename}`
@@ -276,7 +348,7 @@ Serves cached image files. Responses include `Cache-Control: public, max-age=315
 
 ## Known limitations
 
-- **DOM-only capture** — the bookmarklet collects what is present in the loaded DOM. Lazy-loaded or JS-rendered content that has not yet appeared may be missed.
+- **Lazy-loaded content** — the bookmarklet collects what is present in the live DOM at click time. Content that loads later (infinite scroll, deferred images) may be missed.
 - **Image hotlinking** — candidate images in the composer are loaded from their original remote URLs before save. Some CDNs block cross-origin loads; broken images are hidden automatically.
 - **Popup blocker** — browsers may block the popup if the fetch takes too long. Whitelist your Clipper host in popup settings if this happens.
 - **Clip TTL** — unsaved clips are stored in memory only and expire after 1 hour. Restarting the server also clears them.
