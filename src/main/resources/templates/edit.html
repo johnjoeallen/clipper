@@ -353,7 +353,7 @@
     function applyTheme(t) {
         _theme = t;
         document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : '');
-        document.getElementById('theme-toggle').textContent = t === 'light' ? '&#x263E; Dark' : '&#x2600; Light';
+        document.getElementById('theme-toggle').textContent = t === 'light' ? '☾ Dark' : '☀ Light';
         localStorage.setItem('clipper-theme', t);
     }
     function toggleTheme() { applyTheme(_theme === 'light' ? 'dark' : 'light'); }
