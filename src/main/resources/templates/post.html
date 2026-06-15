@@ -140,7 +140,7 @@
                 th:text="${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}"></h1>
             <a class="post-url"
                th:href="${post.url()}"
-               th:text="${post.url()}"
+               th:text="${'Link to ' + post.host()}"
                target="_blank"
                rel="noopener noreferrer"></a>
         </div>

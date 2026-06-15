@@ -164,23 +164,9 @@
         }
 
         .card-footer {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
             padding: 10px 16px 14px;
             border-top: 1px solid var(--border);
-            gap: 8px;
         }
-        .card-source {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            min-width: 0;
-            text-decoration: none;
-        }
-        .card-source:hover { color: var(--accent); }
 
         .card-date {
             font-size: 0.73rem;
@@ -243,12 +229,6 @@
         </div>
 
         <div class="card-footer">
-            <a class="card-source"
-               th:href="${post.url()}"
-               th:text="${post.host()}"
-               target="_blank"
-               rel="noopener noreferrer"
-               onclick="event.stopPropagation()"></a>
             <span class="card-date"
                   th:text="${post.createdAt().length() >= 10 ? post.createdAt().substring(0, 10) : ''}"></span>
         </div>
