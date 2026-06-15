@@ -1,8 +1,8 @@
 package com.clipper.controller;
 
-import com.clipper.model.ClipEntry;
-import com.clipper.model.ClipPayload;
-import com.clipper.model.ImageCandidate;
+import com.clipper.cache.ImageCacheService;
+import com.clipper.cache.ImageCacheStore;
+import com.clipper.model.*;
 import com.clipper.store.ClipStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -11,8 +11,11 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Controller
 public class ClipController {
@@ -24,11 +27,19 @@ public class ClipController {
     private static final int MAX_IMAGES  = 20;
     private static final int MAX_IMG_SRC = 2048;
 
-    private final ClipStore clipStore;
+    private final ClipStore        clipStore;
+    private final ImageCacheService imageCacheService;
+    private final ImageCacheStore   imageCacheStore;
 
-    public ClipController(ClipStore clipStore) {
-        this.clipStore = clipStore;
+    public ClipController(ClipStore clipStore,
+                          ImageCacheService imageCacheService,
+                          ImageCacheStore imageCacheStore) {
+        this.clipStore         = clipStore;
+        this.imageCacheService = imageCacheService;
+        this.imageCacheStore   = imageCacheStore;
     }
+
+    // ── POST /clip ────────────────────────────────────────────────────────────
 
     @CrossOrigin(origins = "*")
     @PostMapping(value = "/clip", consumes = "application/json", produces = "application/json")
@@ -60,13 +71,71 @@ public class ClipController {
         ));
     }
 
+    // ── GET /clip/{id} ────────────────────────────────────────────────────────
+
     @GetMapping("/clip/{id}")
     public String viewClip(@PathVariable String id, Model model) {
         ClipEntry entry = clipStore.find(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Clip not found or expired"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Clip not found or expired"));
         model.addAttribute("clip", entry.payload());
+        model.addAttribute("clipId", id);
         return "clip";
     }
+
+    // ── POST /clip/{id}/save ──────────────────────────────────────────────────
+
+    @CrossOrigin(origins = "*")
+    @PostMapping(value = "/clip/{id}/save", consumes = "application/json", produces = "application/json")
+    @ResponseBody
+    public ResponseEntity<?> saveClip(@PathVariable String id, @RequestBody SaveRequest req) {
+        ClipEntry entry = clipStore.find(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Clip not found or expired"));
+
+        String postId = UUID.randomUUID().toString();
+        List<SaveRequest.SelectedImage> selected =
+                req.selectedImages() == null ? List.of() : req.selectedImages();
+
+        List<CachedImage> cached = new ArrayList<>();
+        for (SaveRequest.SelectedImage img : selected) {
+            cached.add(imageCacheService.cache(postId, img, UUID.randomUUID().toString()));
+        }
+
+        List<String> errors = cached.stream()
+                .filter(c -> "failed".equals(c.cacheStatus()) || "rejected".equals(c.cacheStatus()))
+                .map(c -> c.originalUrl() + ": " + c.cacheError())
+                .toList();
+        if (!errors.isEmpty()) {
+            return ResponseEntity.unprocessableEntity()
+                    .body(Map.of("error", "Image caching failed", "details", errors));
+        }
+
+        List<String> tags = req.tags() == null ? List.of() :
+                req.tags().stream()
+                        .filter(t -> t != null && !t.isBlank())
+                        .map(t -> t.strip().toLowerCase())
+                        .filter(t -> t.length() <= 100)
+                        .distinct()
+                        .limit(50)
+                        .toList();
+
+        ClipPayload p = entry.payload();
+        String selectedText = req.selectedText() != null ? req.selectedText() : p.selectedText();
+
+        SavedPost post = new SavedPost(postId, id, p.url(), p.title(), p.ogTitle(),
+                selectedText, p.description(), tags, Instant.now().toString(), cached);
+
+        imageCacheStore.savePost(post);
+        cached.forEach(imageCacheStore::saveImage);
+
+        return ResponseEntity.ok(Map.of(
+                "postId",  postId,
+                "postUrl", "/post/" + postId
+        ));
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
 
     private ClipPayload sanitize(ClipPayload p) {
         List<ImageCandidate> images = p.images() == null ? List.of() :
@@ -82,8 +151,7 @@ public class ClipController {
                                 img.src(),
                                 img.alt()  != null ? img.alt()  : "",
                                 img.kind() != null ? img.kind() : "",
-                                img.width(),
-                                img.height()))
+                                img.width(), img.height()))
                         .limit(MAX_IMAGES)
                         .toList();
 
@@ -96,21 +164,10 @@ public class ClipController {
                         .limit(50)
                         .toList();
 
-        return new ClipPayload(
-                p.url(),
-                nvl(p.title()),
-                nvl(p.selectedText()),
-                nvl(p.description()),
-                nvl(p.canonicalUrl()),
-                nvl(p.ogTitle()),
-                nvl(p.ogDescription()),
-                nvl(p.ogImage()),
-                images,
-                keywords
-        );
+        return new ClipPayload(p.url(), nvl(p.title()), nvl(p.selectedText()),
+                nvl(p.description()), nvl(p.canonicalUrl()), nvl(p.ogTitle()),
+                nvl(p.ogDescription()), nvl(p.ogImage()), images, keywords);
     }
 
-    private static String nvl(String s) {
-        return s != null ? s : "";
-    }
+    private static String nvl(String s) { return s != null ? s : ""; }
 }

@@ -382,7 +382,7 @@
             <div class="image-grid" th:if="${!clip.images().isEmpty()}">
                 <div class="image-item"
                      th:each="img : ${clip.images()}"
-                     th:attr="data-src=${img.src()},data-alt=${img.alt()}"
+                     th:attr="data-src=${img.src()},data-alt=${img.alt()},data-kind=${img.kind()}"
                      onclick="selectImage(this)">
                     <img th:src="${img.src()}"
                          th:alt="${img.alt()}"
@@ -472,8 +472,40 @@
         document.getElementById('step-1').style.display = 'block';
     }
 
+    var _clipId = /*[[${clipId}]]*/ '';
+
     function submitClip() {
-        alert('Submit not yet implemented.');
+        var payload = {
+            selectedImages: _selectedImages.map(function(img, i) {
+                return { src: img.src, alt: img.alt || '', kind: img.kind || '', rankOrder: i };
+            }),
+            selectedText: document.getElementById('selected-text').value,
+            tags: _tags
+        };
+
+        document.querySelector('#step-2 .btn-primary').disabled = true;
+
+        fetch('/clip/' + _clipId + '/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(result) {
+            if (result.ok) {
+                window.location.href = result.data.postUrl;
+            } else {
+                var details = result.data.details
+                    ? result.data.details.join('\n')
+                    : (result.data.error || 'Save failed');
+                alert('Save failed:\n' + details);
+                document.querySelector('#step-2 .btn-primary').disabled = false;
+            }
+        })
+        .catch(function(e) {
+            alert('Network error: ' + e.message);
+            document.querySelector('#step-2 .btn-primary').disabled = false;
+        });
     }
 
     /* ── Image selection ── */
@@ -481,7 +513,7 @@
     var _selectedImages = [];
 
     function checkImageSize(img) {
-        if (img.naturalWidth < MIN_IMG_DIM || img.naturalHeight < MIN_IMG_DIM) {
+        if (img.naturalWidth < MIN_IMG_DIM && img.naturalHeight < MIN_IMG_DIM) {
             var item = img.closest('.image-item');
             item.style.display = 'none';
             if (item.classList.contains('selected')) {
@@ -499,15 +531,16 @@
     }
 
     function selectImage(el) {
-        var src = el.dataset.src || '';
-        var alt = el.dataset.alt || '';
+        var src  = el.dataset.src  || '';
+        var alt  = el.dataset.alt  || '';
+        var kind = el.dataset.kind || '';
 
         if (el.classList.contains('selected')) {
             el.classList.remove('selected');
             _selectedImages = _selectedImages.filter(function (i) { return i.src !== src; });
         } else {
             el.classList.add('selected');
-            _selectedImages.push({ src: src, alt: alt });
+            _selectedImages.push({ src: src, alt: alt, kind: kind });
         }
     }
 

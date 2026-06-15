@@ -128,9 +128,8 @@
       if (!abs) return;
       if (!abs.startsWith('http://') && !abs.startsWith('https://') && !abs.startsWith('//')) return;
       if (seen[abs]) return;
-      // Skip if any known dimension is below the threshold.
-      if (w != null && w < MIN_DIM) return;
-      if (h != null && h < MIN_DIM) return;
+      // Skip only if both known dimensions are below the threshold.
+      if (w != null && h != null && w < MIN_DIM && h < MIN_DIM) return;
       seen[abs] = true;
       candidates.push({ src: abs, alt: alt || '', kind: kind, width: w || null, height: h || null });
     }

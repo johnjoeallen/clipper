@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${(!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()) + ' — Clipper'}">Saved Post</title>
+    <style>
+        :root {
+            --bg:          #1e2130;
+            --surface:     #262b3d;
+            --border:      #363d58;
+            --text:        #dde0f0;
+            --text-muted:  #8890b0;
+            --label:       #606880;
+            --accent:      #5a9af5;
+            --tag-bg:      #1f2e52;
+            --tag-text:    #6ea8fe;
+            --shadow:      rgba(0,0,0,0.32);
+        }
+        [data-theme="light"] {
+            --bg:         #f0f2f5;
+            --surface:    #ffffff;
+            --border:     #e0e0e0;
+            --text:       #1a1a1a;
+            --text-muted: #555555;
+            --label:      #999999;
+            --accent:     #0057d9;
+            --tag-bg:     #e8f0fe;
+            --tag-text:   #0057d9;
+            --shadow:     rgba(0,0,0,0.08);
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 16px;
+            font-size: 15px;
+            line-height: 1.5;
+        }
+        .post { max-width: 840px; margin: 0 auto; }
+
+        .post-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .post-header-text { flex: 1; min-width: 0; }
+        .post-title {
+            font-size: 1.35rem;
+            font-weight: 600;
+            margin: 0 0 5px;
+            line-height: 1.3;
+        }
+        .post-url {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.82rem;
+            word-break: break-all;
+            display: block;
+        }
+        .post-url:hover { text-decoration: underline; }
+
+        #theme-toggle {
+            flex-shrink: 0;
+            background: var(--surface);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            font-family: inherit;
+            cursor: pointer;
+            margin-top: 3px;
+        }
+
+        .section {
+            background: var(--surface);
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 4px var(--shadow);
+        }
+        .section-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--label);
+            margin: 0 0 10px;
+        }
+
+        /* ── Cached images ── */
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 6px;
+        }
+        .cached-img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 6px;
+            display: block;
+        }
+
+        /* ── Body text ── */
+        .post-body {
+            white-space: pre-wrap;
+            margin: 0;
+            font-size: 0.9rem;
+            line-height: 1.7;
+            color: var(--text);
+        }
+
+        /* ── Tags ── */
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .tag-chip {
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            border-radius: 100px;
+            padding: 3px 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+<div class="post">
+
+    <header class="post-header">
+        <div class="post-header-text">
+            <h1 class="post-title"
+                th:text="${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}"></h1>
+            <a class="post-url"
+               th:href="${post.url()}"
+               th:text="${post.url()}"
+               target="_blank"
+               rel="noopener noreferrer"></a>
+        </div>
+        <button id="theme-toggle" onclick="toggleTheme()"></button>
+    </header>
+
+    <!-- Cached images -->
+    <section class="section" th:if="${!post.images().isEmpty()}">
+        <h2 class="section-label">Images</h2>
+        <div class="image-grid">
+            <img class="cached-img"
+                 th:each="img : ${post.images()}"
+                 th:if="${'cached'.equals(img.cacheStatus())}"
+                 th:src="${img.effectiveImageUrl()}"
+                 th:alt="${img.altText()}">
+        </div>
+    </section>
+
+    <!-- Selected / body text -->
+    <section class="section" th:if="${!post.selectedText().isEmpty()}">
+        <h2 class="section-label">Selected Text</h2>
+        <p class="post-body" th:text="${post.selectedText()}"></p>
+    </section>
+
+    <!-- Description fallback -->
+    <section class="section"
+             th:if="${post.selectedText().isEmpty() && !post.description().isEmpty()}">
+        <h2 class="section-label">Description</h2>
+        <p class="post-body" th:text="${post.description()}"></p>
+    </section>
+
+    <!-- Tags -->
+    <section class="section" th:if="${!post.tags().isEmpty()}">
+        <h2 class="section-label">Tags</h2>
+        <div class="tag-list">
+            <span class="tag-chip" th:each="tag : ${post.tags()}" th:text="${tag}"></span>
+        </div>
+    </section>
+
+</div>
+
+<script th:inline="javascript">
+    var _theme = localStorage.getItem('clipper-theme') || 'dark';
+    function applyTheme(t) {
+        _theme = t;
+        document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : '');
+        document.getElementById('theme-toggle').textContent = t === 'light' ? '☾ Dark' : '☀ Light';
+        localStorage.setItem('clipper-theme', t);
+    }
+    function toggleTheme() { applyTheme(_theme === 'light' ? 'dark' : 'light'); }
+    applyTheme(_theme);
+</script>
+</body>
+</html>
