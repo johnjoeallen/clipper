@@ -193,7 +193,6 @@
 
     <!-- Cached images (selected only) -->
     <section class="section" th:if="${post.primaryImage() != null}">
-        <h2 class="section-label">Images</h2>
         <div class="image-grid">
             <img class="cached-img"
                  th:each="img : ${post.images()}"
@@ -205,7 +204,7 @@
 
     <!-- Selected / body text -->
     <section class="section" th:if="${!post.selectedText().isEmpty()}">
-        <h2 class="section-label">Selected Text</h2>
+        <h2 class="section-label">Description</h2>
         <p class="post-body" th:text="${post.selectedText()}"></p>
     </section>
 
