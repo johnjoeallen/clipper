@@ -213,15 +213,15 @@
          role="link" tabindex="0"
          th:attr="aria-label=${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}">
 
-        <!-- Primary image (first cached image, thumbnail preferred) -->
+        <!-- Primary image (first selected cached image, thumbnail preferred) -->
         <img class="card-image"
-             th:if="${!post.images().isEmpty()}"
-             th:src="${post.images().get(0).effectiveImageUrl()}"
-             th:alt="${post.images().get(0).altText()}"
+             th:if="${post.primaryImage() != null}"
+             th:src="${post.primaryImage().effectiveImageUrl()}"
+             th:alt="${post.primaryImage().altText()}"
              loading="lazy"
              onerror="this.style.display='none'">
         <div class="card-image-placeholder"
-             th:if="${post.images().isEmpty()}">&#128203;</div>
+             th:if="${post.primaryImage() == null}">&#128203;</div>
 
         <div class="card-body">
             <h2 class="card-title"

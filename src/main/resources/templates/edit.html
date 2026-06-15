@@ -21,6 +21,7 @@
             --btn-sec-text:     #c8cad8;
             --btn-sec-hover:    #454d6e;
             --shadow:           rgba(0,0,0,0.32);
+            --img-bg:           #2c3148;
         }
         [data-theme="light"] {
             --bg:               #f0f2f5;
@@ -38,6 +39,7 @@
             --btn-sec-text:     #333333;
             --btn-sec-hover:    #d8dadd;
             --shadow:           rgba(0,0,0,0.08);
+            --img-bg:           #eeeeee;
         }
         *, *::before, *::after { box-sizing: border-box; }
         body {
@@ -64,6 +66,19 @@
             margin: 0;
             flex: 1;
         }
+        .btn-home {
+            flex-shrink: 0;
+            background: none;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            font-family: inherit;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn-home:hover { color: var(--text); border-color: var(--text-muted); }
         #theme-toggle {
             background: var(--btn-sec-bg);
             color: var(--btn-sec-text);
@@ -152,13 +167,90 @@
         }
         .tag-remove:hover { opacity: 1; }
 
+        /* ── Image grid ── */
+        .img-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 8px;
+        }
+        .img-tile {
+            position: relative;
+            cursor: pointer;
+            border-radius: 6px;
+            overflow: hidden;
+            aspect-ratio: 1;
+            background: var(--img-bg);
+            border: 3px solid transparent;
+            transition: border-color 0.12s;
+        }
+        .img-tile.selected { border-color: var(--accent); }
+        .img-tile img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .img-check {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: #fff;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.12s;
+            pointer-events: none;
+        }
+        .img-tile.selected .img-check { opacity: 1; }
+
+        .img-section-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .img-section-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--label);
+        }
+
+        .btn-fetch {
+            padding: 5px 12px;
+            background: var(--btn-sec-bg);
+            color: var(--btn-sec-text);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-family: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+        .btn-fetch:hover { background: var(--btn-sec-hover); }
+        .btn-fetch:disabled { opacity: 0.5; cursor: default; }
+
+        .source-status {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            min-height: 1.2em;
+        }
+
         /* ── Actions ── */
         .actions {
             display: flex;
             justify-content: flex-end;
             gap: 10px;
             margin-top: 4px;
-            margin-bottom: 16px;
+            margin-bottom: 8px;
         }
         .btn {
             padding: 10px 22px;
@@ -176,51 +268,83 @@
         .btn-secondary:hover { background: var(--btn-sec-hover); }
         .btn-primary { background: var(--accent); color: #fff; }
         .btn-primary:hover { background: var(--accent-hover); }
+
+        .save-error {
+            color: #f87171;
+            font-size: 0.85rem;
+            text-align: right;
+            display: none;
+            margin-bottom: 16px;
+        }
     </style>
 </head>
 <body>
 <div class="editor">
 
     <header class="edit-header">
+        <a class="btn-home" href="/">Home</a>
         <h1>Edit clip</h1>
         <button id="theme-toggle" onclick="toggleTheme()"></button>
     </header>
 
-    <form th:action="@{/post/{id}/edit(id=${post.id()})}" method="post"
-          onsubmit="serializeTags()">
+    <section class="section">
+        <h2 class="section-label">Title</h2>
+        <input class="text-input" type="text" id="title-input"
+               th:value="${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}">
+    </section>
 
-        <input type="hidden" name="tagsJson" id="tags-json">
+    <section class="section">
+        <h2 class="section-label">Body Text</h2>
+        <textarea class="text-input" id="text-input"
+                  th:text="${post.selectedText()}"></textarea>
+    </section>
 
-        <section class="section">
-            <h2 class="section-label">Title</h2>
-            <input class="text-input"
-                   type="text"
-                   name="title"
-                   th:value="${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}">
-        </section>
+    <section class="section">
+        <h2 class="section-label">Tags</h2>
+        <div class="tag-input-row">
+            <input class="tag-input" id="tag-input" type="text"
+                   placeholder="Type a tag and press Enter or comma&hellip;">
+        </div>
+        <div class="tag-chips" id="tag-chips"></div>
+    </section>
 
-        <section class="section">
-            <h2 class="section-label">Body Text</h2>
-            <textarea class="text-input"
-                      name="selectedText"
-                      th:text="${post.selectedText()}"></textarea>
-        </section>
+    <section class="section">
+        <h2 class="section-label">Images</h2>
 
-        <section class="section">
-            <h2 class="section-label">Tags</h2>
-            <div class="tag-input-row">
-                <input class="tag-input" id="tag-input" type="text"
-                       placeholder="Type a tag and press Enter or comma&hellip;">
-            </div>
-            <div class="tag-chips" id="tag-chips"></div>
-        </section>
-
-        <div class="actions">
-            <a class="btn btn-secondary" th:href="@{/post/{id}(id=${post.id()})}">Cancel</a>
-            <button class="btn btn-primary" type="submit">Save</button>
+        <!-- Cached images -->
+        <div class="img-section-head">
+            <span class="img-section-label">Saved</span>
+        </div>
+        <div class="img-grid" id="cached-grid">
+            <th:block th:each="img : ${post.images()}"
+                      th:if="${'cached'.equals(img.cacheStatus())}">
+                <div class="img-tile"
+                     th:classappend="${img.selected()} ? ' selected'"
+                     th:attr="data-img-id=${img.id()}"
+                     onclick="this.classList.toggle('selected')">
+                    <img th:src="${img.effectiveImageUrl()}"
+                         th:alt="${img.altText()}"
+                         onerror="this.closest('.img-tile').style.display='none'">
+                    <div class="img-check">&#10003;</div>
+                </div>
+            </th:block>
         </div>
 
-    </form>
+        <!-- Source images -->
+        <div class="img-section-head" style="margin-top:16px;">
+            <span class="img-section-label">From source</span>
+            <button class="btn-fetch" id="fetch-btn" type="button" onclick="fetchSource()">&#8635; Fetch</button>
+        </div>
+        <div class="source-status" id="source-status"></div>
+        <div class="img-grid" id="source-grid"></div>
+    </section>
+
+    <div class="actions">
+        <a class="btn btn-secondary" th:href="@{/post/{id}(id=${post.id()})}">Cancel</a>
+        <button class="btn btn-primary" type="button" onclick="saveEdit()">Save</button>
+    </div>
+    <div class="save-error" id="save-error"></div>
+
 </div>
 
 <script th:inline="javascript">
@@ -229,7 +353,7 @@
     function applyTheme(t) {
         _theme = t;
         document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : '');
-        document.getElementById('theme-toggle').textContent = t === 'light' ? '☾ Dark' : '☀ Light';
+        document.getElementById('theme-toggle').textContent = t === 'light' ? '&#x263E; Dark' : '&#x2600; Light';
         localStorage.setItem('clipper-theme', t);
     }
     function toggleTheme() { applyTheme(_theme === 'light' ? 'dark' : 'light'); }
@@ -237,6 +361,7 @@
 
     /* ── Tags ── */
     var _tags = /*[[${post.tags()}]]*/ [];
+    var _postId = /*[[${post.id()}]]*/ '';
 
     function addTag(raw) {
         raw.split(',').forEach(function(part) {
@@ -267,10 +392,6 @@
             container.appendChild(chip);
         });
     }
-    function serializeTags() {
-        document.getElementById('tags-json').value = JSON.stringify(_tags);
-    }
-
     renderTags();
 
     var tagInput = document.getElementById('tag-input');
@@ -283,6 +404,90 @@
     tagInput.addEventListener('blur', function() {
         if (this.value.trim()) { addTag(this.value); this.value = ''; }
     });
+
+    /* ── Source image fetch ── */
+    var _sourceImages = [];
+
+    function fetchSource() {
+        var btn    = document.getElementById('fetch-btn');
+        var status = document.getElementById('source-status');
+        var grid   = document.getElementById('source-grid');
+        btn.disabled = true;
+        status.textContent = 'Fetching…';
+        grid.innerHTML = '';
+        _sourceImages = [];
+
+        fetch('/post/' + _postId + '/source-images')
+            .then(function(r) {
+                if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Fetch failed'); });
+                return r.json();
+            })
+            .then(function(imgs) {
+                _sourceImages = imgs;
+                status.textContent = imgs.length + ' image' + (imgs.length === 1 ? '' : 's') + ' found';
+                imgs.forEach(function(img, i) {
+                    var tile = document.createElement('div');
+                    tile.className = 'img-tile';
+                    tile.dataset.idx = i;
+                    tile.onclick = function() { tile.classList.toggle('selected'); };
+                    var im = document.createElement('img');
+                    im.src = img.src;
+                    im.alt = img.alt || '';
+                    im.onerror = function() { tile.style.display = 'none'; };
+                    var chk = document.createElement('div');
+                    chk.className = 'img-check';
+                    chk.textContent = '✓';
+                    tile.appendChild(im);
+                    tile.appendChild(chk);
+                    grid.appendChild(tile);
+                });
+                btn.disabled = false;
+            })
+            .catch(function(e) {
+                status.textContent = 'Error: ' + e.message;
+                btn.disabled = false;
+            });
+    }
+
+    /* ── Save ── */
+    function saveEdit() {
+        var keepIds = [];
+        document.querySelectorAll('#cached-grid .img-tile.selected').forEach(function(t) {
+            keepIds.push(t.dataset.imgId);
+        });
+
+        var newImages = [];
+        document.querySelectorAll('#source-grid .img-tile.selected').forEach(function(t) {
+            var cand = _sourceImages[parseInt(t.dataset.idx, 10)];
+            if (cand) newImages.push({ src: cand.src, alt: cand.alt || '', kind: cand.kind, rankOrder: 0 });
+        });
+
+        var body = {
+            title:        document.getElementById('title-input').value,
+            selectedText: document.getElementById('text-input').value,
+            tags:         _tags.slice(),
+            keepImageIds: keepIds,
+            newImages:    newImages
+        };
+
+        var errEl = document.getElementById('save-error');
+        errEl.style.display = 'none';
+
+        fetch('/post/' + _postId + '/edit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Save failed'); });
+            return r.json();
+        })
+        .then(function(data) { window.location.href = data.postUrl; })
+        .catch(function(e) {
+            errEl.textContent = e.message;
+            errEl.style.display = 'block';
+        });
+    }
 </script>
 </body>
 </html>

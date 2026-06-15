@@ -8,10 +8,12 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Component
 public class ImageCacheStore {
@@ -102,6 +104,23 @@ public class ImageCacheStore {
         SavedPost p = posts.get(0);
         return Optional.of(new SavedPost(p.id(), p.clipId(), p.url(), p.title(), p.ogTitle(),
                 p.selectedText(), p.description(), p.tags(), p.createdAt(), images));
+    }
+
+    public void updateSelectedImages(String postId, List<String> keepIds) {
+        jdbc.update("UPDATE cached_images SET selected = 0 WHERE post_id = ?", postId);
+        if (!keepIds.isEmpty()) {
+            String placeholders = keepIds.stream().map(s -> "?").collect(Collectors.joining(","));
+            Object[] params = Stream.concat(Stream.of(postId), keepIds.stream()).toArray();
+            jdbc.update("UPDATE cached_images SET selected = 1 WHERE post_id = ? AND id IN ("
+                    + placeholders + ")", params);
+        }
+    }
+
+    public int maxRankOrder(String postId) {
+        List<Integer> r = jdbc.query(
+                "SELECT COALESCE(MAX(rank_order), -1) FROM cached_images WHERE post_id = ?",
+                (rs, rn) -> rs.getInt(1), postId);
+        return r.isEmpty() ? -1 : r.get(0);
     }
 
     public void updatePost(String id, String title, String selectedText, List<String> tags) {

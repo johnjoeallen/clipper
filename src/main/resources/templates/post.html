@@ -64,6 +64,7 @@
         }
         .post-link-icon:hover { opacity: 1; }
 
+        .btn-home,
         .btn-edit {
             flex-shrink: 0;
             background: none;
@@ -77,6 +78,7 @@
             margin-top: 3px;
             text-decoration: none;
         }
+        .btn-home:hover,
         .btn-edit:hover { color: var(--text); border-color: var(--text-muted); }
 
         #theme-toggle {
@@ -161,17 +163,18 @@
                       title="View original">&#x2197;</a>
             </h1>
         </div>
+        <a class="btn-home" href="/">Home</a>
         <a class="btn-edit" th:href="@{/post/{id}/edit(id=${post.id()})}">Edit</a>
         <button id="theme-toggle" onclick="toggleTheme()"></button>
     </header>
 
-    <!-- Cached images -->
-    <section class="section" th:if="${!post.images().isEmpty()}">
+    <!-- Cached images (selected only) -->
+    <section class="section" th:if="${post.primaryImage() != null}">
         <h2 class="section-label">Images</h2>
         <div class="image-grid">
             <img class="cached-img"
                  th:each="img : ${post.images()}"
-                 th:if="${'cached'.equals(img.cacheStatus())}"
+                 th:if="${img.selected() && 'cached'.equals(img.cacheStatus())}"
                  th:src="${img.effectiveImageUrl()}"
                  th:alt="${img.altText()}">
         </div>

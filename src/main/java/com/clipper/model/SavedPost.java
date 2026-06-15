@@ -18,4 +18,10 @@ public record SavedPost(
         try { return new java.net.URI(url).getHost(); }
         catch (Exception e) { return url; }
     }
+
+    public CachedImage primaryImage() {
+        return images.stream()
+                .filter(i -> i.selected() && "cached".equals(i.cacheStatus()))
+                .findFirst().orElse(null);
+    }
 }
