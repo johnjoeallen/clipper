@@ -66,19 +66,15 @@
             margin: 0;
             flex: 1;
         }
-        .btn-home {
+        .site-title {
             flex-shrink: 0;
-            background: none;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
             color: var(--text-muted);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 5px 12px;
-            font-size: 0.8rem;
-            font-family: inherit;
-            cursor: pointer;
             text-decoration: none;
         }
-        .btn-home:hover { color: var(--text); border-color: var(--text-muted); }
+        .site-title:hover { color: var(--text); }
         #theme-toggle {
             background: var(--btn-sec-bg);
             color: var(--btn-sec-text);
@@ -282,7 +278,7 @@
 <div class="editor">
 
     <header class="edit-header">
-        <a class="btn-home" href="/">Home</a>
+        <a class="site-title" href="/">Clipper</a>
         <h1>Edit clip</h1>
         <button id="theme-toggle" onclick="toggleTheme()"></button>
     </header>

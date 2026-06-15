@@ -59,6 +59,8 @@
             font-weight: 700;
             letter-spacing: -0.02em;
             margin: 0;
+            color: var(--text);
+            text-decoration: none;
         }
         .search-form {
             flex: 1;
@@ -234,7 +236,7 @@
 <body>
 
 <div class="topbar">
-    <h1 class="topbar-title">Clipper</h1>
+    <a class="topbar-title" href="/">Clipper</a>
     <form class="search-form" action="/" method="get">
         <input class="search-input" type="search" name="q"
                th:value="${q}"
