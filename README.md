@@ -160,6 +160,74 @@ All pages support dark and light themes with a toggle button in the header. The 
 
 ---
 
+## Database
+
+Clipper uses a single SQLite file at `~/.clipper/clipper.db` (configurable via `clipper.data-dir`). The schema is created automatically on first run; existing databases are migrated forward via `PRAGMA table_info` checks on startup.
+
+### Tables
+
+**`posts`** — one row per saved clip.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | UUID |
+| `clip_id` | TEXT | ID of the originating in-memory clip |
+| `url` | TEXT | Source page URL |
+| `title` | TEXT | Page title (`document.title`) |
+| `og_title` | TEXT | OG title; cleared to `''` after a manual edit |
+| `selected_text` | TEXT | User-selected or edited description |
+| `description` | TEXT | `<meta name="description">` |
+| `page_text` | TEXT | Visible body text captured by the bookmarklet (up to 100 KB) |
+| `tags` | TEXT | JSON array of tag strings |
+| `created_at` | TEXT | ISO-8601 instant |
+
+**`cached_images`** — one row per candidate image per post.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | UUID |
+| `post_id` | TEXT FK | References `posts.id` |
+| `original_url` | TEXT | Source URL |
+| `local_path` | TEXT | Relative path under `images/originals/` |
+| `thumbnail_path` | TEXT | Relative path under `images/thumbnails/` |
+| `sha256` | TEXT | Hex SHA-256 of file bytes (used for deduplication) |
+| `cache_status` | TEXT | `cached` · `failed` · `rejected` |
+| `selected` | INTEGER | `1` = shown on the post, `0` = hidden |
+| `rank_order` | INTEGER | Display order |
+| … | | width, height, content_type, byte_size, alt_text, kind, cached_at, cache_error |
+
+### Full-text search (FTS5)
+
+A virtual FTS5 table `posts_fts` is created alongside the main tables:
+
+```sql
+CREATE VIRTUAL TABLE posts_fts USING fts5(
+  post_id    UNINDEXED,
+  title,
+  og_title,
+  selected_text,
+  description,
+  tags_text,
+  page_text,
+  tokenize = 'porter unicode61'
+);
+```
+
+The **porter stemmer** reduces words to their root form before indexing, so a search for "running" also matches "run", "runs", and "runner". The `unicode61` tokenizer handles non-ASCII text correctly.
+
+`posts_fts` is kept in sync with `posts`:
+- Populated on initial startup for any rows not yet indexed.
+- A new row is inserted when a post is saved.
+- The row is deleted and re-inserted when a post is edited.
+
+Searches run as `posts_fts MATCH ?` with each query word suffixed by `*` for prefix matching, and results are ordered by the built-in `rank` column (BM25 relevance).
+
+### Connection pool
+
+SQLite allows only one writer at a time. HikariCP is configured with `maximum-pool-size=1` to prevent concurrent write contention. Reads and writes all share the single pooled connection.
+
+---
+
 ## Running
 
 ```bash
