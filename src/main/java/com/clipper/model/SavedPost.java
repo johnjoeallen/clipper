@@ -10,6 +10,7 @@ public record SavedPost(
         String       ogTitle,
         String       selectedText,
         String       description,
+        String       pageText,
         List<String> tags,
         String       createdAt,
         List<CachedImage> images

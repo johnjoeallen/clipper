@@ -60,6 +60,39 @@
             letter-spacing: -0.02em;
             margin: 0;
         }
+        .search-form {
+            flex: 1;
+            max-width: 400px;
+            display: flex;
+        }
+        .search-input {
+            flex: 1;
+            border: 1px solid var(--border);
+            border-radius: 20px 0 0 20px;
+            padding: 5px 14px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            color: var(--text);
+            background: var(--surface);
+            outline: none;
+            transition: border-color 0.12s;
+        }
+        .search-input:focus { border-color: var(--accent); }
+        .search-input::placeholder { color: var(--label); }
+        .search-btn {
+            border: 1px solid var(--border);
+            border-left: none;
+            border-radius: 0 20px 20px 0;
+            padding: 5px 14px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            cursor: pointer;
+            background: var(--surface);
+            color: var(--text-muted);
+            transition: color 0.12s;
+        }
+        .search-btn:hover { color: var(--text); }
+
         #theme-toggle {
             background: var(--surface);
             color: var(--text-muted);
@@ -202,6 +235,13 @@
 
 <div class="topbar">
     <h1 class="topbar-title">Clipper</h1>
+    <form class="search-form" action="/" method="get">
+        <input class="search-input" type="search" name="q"
+               th:value="${q}"
+               placeholder="Search clips&hellip;"
+               autocomplete="off">
+        <button class="search-btn" type="submit">&#x2315;</button>
+    </form>
     <button id="theme-toggle" onclick="toggleTheme()"></button>
 </div>
 
@@ -252,8 +292,15 @@
     </div>
 </div>
 
-<!-- Empty state -->
-<div class="empty" th:if="${posts.isEmpty()}">
+<!-- Empty state: search returned nothing -->
+<div class="empty" th:if="${posts.isEmpty() && !q.isEmpty()}">
+    <div class="empty-icon">&#128269;</div>
+    <p class="empty-heading">No results for &ldquo;<span th:text="${q}"></span>&rdquo;</p>
+    <p class="empty-body"><a href="/">Clear search</a></p>
+</div>
+
+<!-- Empty state: no clips at all -->
+<div class="empty" th:if="${posts.isEmpty() && q.isEmpty()}">
     <div class="empty-icon">&#128203;</div>
     <p class="empty-heading">No clips saved yet</p>
     <p class="empty-body">Use the bookmarklet to clip a page, then submit in the composer.</p>

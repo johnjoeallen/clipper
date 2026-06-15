@@ -152,6 +152,25 @@
     return candidates.slice(0, 30); // server will truncate to 20
   }
 
+  function collectPageText() {
+    try {
+      var clone = document.body.cloneNode(true);
+      clone.querySelectorAll(
+        'script,style,noscript,svg,canvas,video,audio,picture,' +
+        'nav,header,footer,aside,form,' +
+        '[role=navigation],[role=banner],[role=complementary],[role=search],' +
+        '[aria-hidden=true]'
+      ).forEach(function(el) { el.remove(); });
+      var text = (clone.innerText || clone.textContent || '')
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      return text.slice(0, 100000);
+    } catch (_) {
+      return '';
+    }
+  }
+
   function buildPayload() {
     var payload = {
       url:           window.location.href,
@@ -163,7 +182,8 @@
       ogDescription: getMeta('og:description'),
       ogImage:       getMeta('og:image'),
       images:        collectImages(),
-      keywords:      collectKeywords()
+      keywords:      collectKeywords(),
+      pageText:      collectPageText()
     };
 
     try {

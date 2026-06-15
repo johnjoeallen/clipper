@@ -20,12 +20,13 @@ import java.util.UUID;
 @Controller
 public class ClipController {
 
-    private static final int MAX_URL_LEN = 2048;
-    private static final int MAX_TITLE   = 500;
-    private static final int MAX_TEXT    = 10_000;
-    private static final int MAX_DESC    = 2000;
-    private static final int MAX_IMAGES  = 20;
-    private static final int MAX_IMG_SRC = 2048;
+    private static final int MAX_URL_LEN   = 2048;
+    private static final int MAX_TITLE     = 500;
+    private static final int MAX_TEXT      = 10_000;
+    private static final int MAX_DESC      = 2000;
+    private static final int MAX_PAGE_TEXT = 100_000;
+    private static final int MAX_IMAGES    = 20;
+    private static final int MAX_IMG_SRC   = 2048;
 
     private final ClipStore        clipStore;
     private final ImageCacheService imageCacheService;
@@ -124,7 +125,7 @@ public class ClipController {
         String selectedText = req.selectedText() != null ? req.selectedText() : p.selectedText();
 
         SavedPost post = new SavedPost(postId, id, p.url(), p.title(), p.ogTitle(),
-                selectedText, p.description(), tags, Instant.now().toString(), cached);
+                selectedText, p.description(), nvl(p.pageText()), tags, Instant.now().toString(), cached);
 
         imageCacheStore.savePost(post);
         cached.forEach(imageCacheStore::saveImage);
@@ -164,9 +165,12 @@ public class ClipController {
                         .limit(50)
                         .toList();
 
+        String pageText = nvl(p.pageText());
+        if (pageText.length() > MAX_PAGE_TEXT) pageText = pageText.substring(0, MAX_PAGE_TEXT);
+
         return new ClipPayload(p.url(), nvl(p.title()), nvl(p.selectedText()),
                 nvl(p.description()), nvl(p.canonicalUrl()), nvl(p.ogTitle()),
-                nvl(p.ogDescription()), nvl(p.ogImage()), images, keywords);
+                nvl(p.ogDescription()), nvl(p.ogImage()), images, keywords, pageText);
     }
 
     private static String nvl(String s) { return s != null ? s : ""; }
