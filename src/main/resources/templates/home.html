@@ -85,6 +85,22 @@
         }
         .search-input:focus { border-color: var(--accent); }
         .search-input::placeholder { color: var(--label); }
+        .search-input::-webkit-search-cancel-button { display: none; }
+        .clear-btn {
+            display: none;
+            align-items: center;
+            border: 1px solid var(--border);
+            border-left: none;
+            border-right: none;
+            padding: 5px 9px;
+            font-size: 0.8rem;
+            line-height: 1;
+            cursor: pointer;
+            background: var(--surface);
+            color: var(--text-muted);
+            transition: color 0.12s;
+        }
+        .clear-btn:hover { color: var(--text); }
         .search-btn {
             border: 1px solid var(--border);
             border-left: none;
@@ -252,11 +268,12 @@
         Clipper
     </a>
     <form class="search-form" action="/" method="get">
-        <input class="search-input" type="search" name="q"
+        <input class="search-input" id="search-input" type="search" name="q"
                th:value="${q}"
                placeholder="Search clips&hellip;"
                autocomplete="off">
-        <button class="search-btn" type="submit">&#x2315;</button>
+        <button class="clear-btn" id="search-clear" type="button" aria-label="Clear search">&#x2715;</button>
+        <button class="search-btn" type="submit" aria-label="Search">&#x2315;</button>
     </form>
     <button id="theme-toggle" onclick="toggleTheme()"></button>
 </div>
@@ -332,6 +349,25 @@
     }
     function toggleTheme() { applyTheme(_theme === 'light' ? 'dark' : 'light'); }
     applyTheme(_theme);
+
+    /* ── Search: clear button + auto-focus ── */
+    var searchInput = document.getElementById('search-input');
+    var clearBtn    = document.getElementById('search-clear');
+
+    function updateClear() {
+        clearBtn.style.display = searchInput.value ? 'flex' : 'none';
+    }
+
+    clearBtn.addEventListener('click', function() {
+        searchInput.value = '';
+        updateClear();
+        searchInput.focus();
+    });
+
+    searchInput.addEventListener('input', updateClear);
+    updateClear();
+
+    if (searchInput.value.trim()) searchInput.focus();
 </script>
 </body>
 </html>
