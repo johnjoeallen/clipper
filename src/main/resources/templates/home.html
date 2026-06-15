@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clipper</title>
+    <style>
+        :root {
+            --bg:          #1e2130;
+            --surface:     #262b3d;
+            --border:      #363d58;
+            --text:        #dde0f0;
+            --text-muted:  #8890b0;
+            --label:       #606880;
+            --accent:      #5a9af5;
+            --accent-hover:#3d70e0;
+            --tag-bg:      #1f2e52;
+            --tag-text:    #6ea8fe;
+            --img-bg:      #2c3148;
+            --shadow:      rgba(0,0,0,0.32);
+            --empty:       #505570;
+        }
+        [data-theme="light"] {
+            --bg:          #f0f2f5;
+            --surface:     #ffffff;
+            --border:      #e0e0e0;
+            --text:        #1a1a1a;
+            --text-muted:  #555555;
+            --label:       #999999;
+            --accent:      #0057d9;
+            --accent-hover:#0048b8;
+            --tag-bg:      #e8f0fe;
+            --tag-text:    #0057d9;
+            --img-bg:      #eeeeee;
+            --shadow:      rgba(0,0,0,0.08);
+            --empty:       #bbbbbb;
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px 16px 40px;
+            font-size: 15px;
+            line-height: 1.5;
+        }
+
+        /* ── Top bar ── */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            max-width: 1100px;
+            margin: 0 auto 24px;
+        }
+        .topbar-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin: 0;
+        }
+        #theme-toggle {
+            background: var(--surface);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        #theme-toggle:hover { color: var(--text); }
+
+        /* ── Card grid ── */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        /* ── Card ── */
+        .card {
+            background: var(--surface);
+            border-radius: 10px;
+            box-shadow: 0 1px 4px var(--shadow);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            text-decoration: none;
+            color: inherit;
+            transition: box-shadow 0.15s, transform 0.15s;
+        }
+        .card:hover {
+            box-shadow: 0 4px 16px var(--shadow);
+            transform: translateY(-2px);
+        }
+
+        .card-image {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            object-fit: cover;
+            display: block;
+            background: var(--img-bg);
+        }
+
+        .card-image-placeholder {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: var(--img-bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--label);
+            font-size: 2rem;
+        }
+
+        .card-body {
+            padding: 14px 16px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .card-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin: 0;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .card-excerpt {
+            font-size: 0.83rem;
+            color: var(--text-muted);
+            margin: 0;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: pre-wrap;
+            flex: 1;
+        }
+
+        .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .card-tag {
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            border-radius: 100px;
+            padding: 2px 9px;
+            font-size: 0.73rem;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px 14px;
+            border-top: 1px solid var(--border);
+            gap: 8px;
+        }
+        .card-source {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+            text-decoration: none;
+        }
+        .card-source:hover { color: var(--accent); }
+
+        .card-date {
+            font-size: 0.73rem;
+            color: var(--label);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* ── Empty state ── */
+        .empty {
+            max-width: 1100px;
+            margin: 60px auto;
+            text-align: center;
+            color: var(--empty);
+        }
+        .empty-icon { font-size: 3rem; margin-bottom: 12px; }
+        .empty-heading { font-size: 1.1rem; font-weight: 600; margin: 0 0 6px; color: var(--text-muted); }
+        .empty-body { font-size: 0.9rem; margin: 0; }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <h1 class="topbar-title">Clipper</h1>
+    <button id="theme-toggle" onclick="toggleTheme()"></button>
+</div>
+
+<!-- Card grid -->
+<div class="grid" th:if="${!posts.isEmpty()}">
+    <a class="card"
+       th:each="post : ${posts}"
+       th:href="@{/post/{id}(id=${post.id()})}">
+
+        <!-- Primary image (first cached image, thumbnail preferred) -->
+        <img class="card-image"
+             th:if="${!post.images().isEmpty()}"
+             th:src="${post.images().get(0).effectiveImageUrl()}"
+             th:alt="${post.images().get(0).altText()}"
+             loading="lazy"
+             onerror="this.style.display='none'">
+        <div class="card-image-placeholder"
+             th:if="${post.images().isEmpty()}">&#128203;</div>
+
+        <div class="card-body">
+            <h2 class="card-title"
+                th:text="${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}"></h2>
+
+            <p class="card-excerpt"
+               th:if="${!post.selectedText().isEmpty()}"
+               th:text="${post.selectedText()}"></p>
+            <p class="card-excerpt"
+               th:if="${post.selectedText().isEmpty() && !post.description().isEmpty()}"
+               th:text="${post.description()}"></p>
+
+            <div class="card-tags" th:if="${!post.tags().isEmpty()}">
+                <span class="card-tag"
+                      th:each="tag : ${post.tags()}"
+                      th:text="${tag}"></span>
+            </div>
+        </div>
+
+        <div class="card-footer">
+            <a class="card-source"
+               th:href="${post.url()}"
+               th:text="${#uris.extractHost(post.url())}"
+               target="_blank"
+               rel="noopener noreferrer"
+               onclick="event.stopPropagation()"></a>
+            <span class="card-date"
+                  th:text="${post.createdAt().length() >= 10 ? post.createdAt().substring(0, 10) : ''}"></span>
+        </div>
+    </a>
+</div>
+
+<!-- Empty state -->
+<div class="empty" th:if="${posts.isEmpty()}">
+    <div class="empty-icon">&#128203;</div>
+    <p class="empty-heading">No clips saved yet</p>
+    <p class="empty-body">Use the bookmarklet to clip a page, then submit in the composer.</p>
+</div>
+
+<script>
+    var _theme = localStorage.getItem('clipper-theme') || 'dark';
+    function applyTheme(t) {
+        _theme = t;
+        document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : '');
+        document.getElementById('theme-toggle').textContent = t === 'light' ? '☾ Dark' : '☀ Light';
+        localStorage.setItem('clipper-theme', t);
+    }
+    function toggleTheme() { applyTheme(_theme === 'light' ? 'dark' : 'light'); }
+    applyTheme(_theme);
+</script>
+</body>
+</html>
