@@ -359,9 +359,7 @@
     }
 
     clearBtn.addEventListener('click', function() {
-        searchInput.value = '';
-        updateClear();
-        searchInput.focus();
+        window.location.href = '/';
     });
 
     searchInput.addEventListener('input', updateClear);
