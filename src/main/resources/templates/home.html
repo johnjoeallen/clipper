@@ -225,14 +225,30 @@
             border-top: 1px solid var(--border);
         }
 
-        .card-edit {
-            color: var(--label);
-            text-decoration: none;
-            font-size: 0.9rem;
-            line-height: 1;
-            opacity: 0.7;
+        .card-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        .card-edit:hover { color: var(--accent); opacity: 1; }
+
+        .card-edit {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+        .card-edit:hover { color: var(--accent); }
+
+        .card-delete {
+            background: none;
+            border: none;
+            padding: 0;
+            color: var(--text-muted);
+            font-size: 1.25rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .card-delete:hover { color: #e5484d; }
 
         .card-date {
             font-size: 0.73rem;
@@ -317,10 +333,17 @@
         <div class="card-footer">
             <span class="card-date"
                   th:text="${post.createdAt().length() >= 10 ? post.createdAt().substring(0, 10) : ''}"></span>
-            <a class="card-edit"
-               th:href="@{/post/{id}/edit(id=${post.id()})}"
-               onclick="event.stopPropagation()"
-               title="Edit">&#9998;</a>
+            <div class="card-actions">
+                <a class="card-edit"
+                   th:href="@{/post/{id}/edit(id=${post.id()})}"
+                   onclick="event.stopPropagation()"
+                   title="Edit">&#9998;</a>
+                <button class="card-delete"
+                        type="button"
+                        th:attr="data-post-id=${post.id()}"
+                        onclick="event.stopPropagation(); deleteCard(this)"
+                        title="Delete">&#128465;</button>
+            </div>
         </div>
     </div>
 </div>
@@ -366,6 +389,20 @@
     updateClear();
 
     if (searchInput.value.trim()) searchInput.focus();
+
+    /* ── Delete card ── */
+    function deleteCard(btn) {
+        var postId = btn.dataset.postId;
+        if (!confirm('Delete this clip? This cannot be undone.')) return;
+        fetch('/post/' + postId + '/delete', { method: 'POST' })
+            .then(function(r) {
+                if (!r.ok) throw new Error('Delete failed');
+                var card = btn.closest('.card');
+                if (card) card.remove();
+                if (!document.querySelector('.card')) location.reload();
+            })
+            .catch(function() { alert('Failed to delete. Please try again.'); });
+    }
 </script>
 </body>
 </html>

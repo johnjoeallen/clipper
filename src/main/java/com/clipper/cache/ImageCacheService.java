@@ -13,6 +13,7 @@ import java.net.*;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -163,6 +164,20 @@ public class ImageCacheService {
                 try { Files.deleteIfExists(tempFile); } catch (IOException ignored) {}
             }
         }
+    }
+
+    public void deletePostAndFiles(String postId) {
+        List<CachedImage> images = store.deletePost(postId);
+        for (CachedImage img : images) {
+            if (img.sha256() == null || store.sha256StillReferenced(img.sha256())) continue;
+            deleteQuietly(img.localPath());
+            deleteQuietly(img.thumbnailPath());
+        }
+    }
+
+    private void deleteQuietly(String path) {
+        if (path == null) return;
+        try { Files.deleteIfExists(Path.of(path)); } catch (IOException ignored) {}
     }
 
     // ── HTTP with manual redirect following (validates each hop) ─────────────

@@ -164,6 +164,24 @@ public class ImageCacheStore {
         }
     }
 
+    public List<CachedImage> deletePost(String id) {
+        List<CachedImage> images = jdbc.query(
+                "SELECT * FROM cached_images WHERE post_id = ?", this::mapImage, id);
+
+        jdbc.update("DELETE FROM cached_images WHERE post_id = ?", id);
+        jdbc.update("DELETE FROM posts_fts WHERE post_id = ?", id);
+        jdbc.update("DELETE FROM posts WHERE id = ?", id);
+
+        return images;
+    }
+
+    public boolean sha256StillReferenced(String sha256) {
+        List<Integer> r = jdbc.query(
+                "SELECT 1 FROM cached_images WHERE sha256 = ? LIMIT 1",
+                (rs, rn) -> 1, sha256);
+        return !r.isEmpty();
+    }
+
     public int maxRankOrder(String postId) {
         List<Integer> r = jdbc.query(
                 "SELECT COALESCE(MAX(rank_order), -1) FROM cached_images WHERE post_id = ?",

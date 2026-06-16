@@ -122,5 +122,16 @@ public class PostController {
         return ResponseEntity.ok(Map.of("postUrl", "/post/" + id));
     }
 
+    // ── Delete (AJAX) ─────────────────────────────────────────────────────────
+
+    @PostMapping(value = "/post/{id}/delete", produces = "application/json")
+    @ResponseBody
+    public ResponseEntity<?> deletePost(@PathVariable String id) {
+        store.findPost(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Post not found"));
+        cacheService.deletePostAndFiles(id);
+        return ResponseEntity.ok(Map.of("status", "deleted"));
+    }
+
     private static String nvl(String s) { return s != null ? s : ""; }
 }
