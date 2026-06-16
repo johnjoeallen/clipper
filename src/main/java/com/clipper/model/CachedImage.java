@@ -21,14 +21,12 @@ public record CachedImage(
 ) {
     public String localFilename() {
         if (localPath == null) return null;
-        int i = localPath.lastIndexOf('/');
-        return i >= 0 ? localPath.substring(i + 1) : localPath;
+        return java.nio.file.Path.of(localPath).getFileName().toString();
     }
 
     public String thumbnailFilename() {
         if (thumbnailPath == null) return null;
-        int i = thumbnailPath.lastIndexOf('/');
-        return i >= 0 ? thumbnailPath.substring(i + 1) : thumbnailPath;
+        return java.nio.file.Path.of(thumbnailPath).getFileName().toString();
     }
 
     public String effectiveImageUrl() {
