@@ -173,7 +173,9 @@
             padding: 3px 12px;
             font-size: 0.8rem;
             font-weight: 500;
+            text-decoration: none;
         }
+        .tag-chip:hover { opacity: 0.75; }
     </style>
 </head>
 <body>
@@ -234,7 +236,7 @@
     <section class="section" th:if="${!post.tags().isEmpty()}">
         <h2 class="section-label">Tags</h2>
         <div class="tag-list">
-            <span class="tag-chip" th:each="tag : ${post.tags()}" th:text="${tag}"></span>
+            <a class="tag-chip" th:each="tag : ${post.tags()}" th:href="@{/(q=${tag})}" th:text="${tag}"></a>
         </div>
     </section>
 

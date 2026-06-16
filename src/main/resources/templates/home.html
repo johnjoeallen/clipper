@@ -215,7 +215,9 @@
             font-size: 0.73rem;
             font-weight: 500;
             white-space: nowrap;
+            text-decoration: none;
         }
+        .card-tag:hover { opacity: 0.75; }
 
         .card-footer {
             display: flex;
@@ -324,9 +326,11 @@
                th:text="${post.description()}"></p>
 
             <div class="card-tags" th:if="${!post.tags().isEmpty()}">
-                <span class="card-tag"
-                      th:each="tag : ${post.tags()}"
-                      th:text="${tag}"></span>
+                <a class="card-tag"
+                   th:each="tag : ${post.tags()}"
+                   th:href="@{/(q=${tag})}"
+                   onclick="event.stopPropagation()"
+                   th:text="${tag}"></a>
             </div>
         </div>
 
