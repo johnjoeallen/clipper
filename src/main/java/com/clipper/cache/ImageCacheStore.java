@@ -20,76 +20,54 @@ public class ImageCacheStore {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
+    private final SearchIndex  searchIndex;
 
-    public ImageCacheStore(JdbcTemplate jdbc, ObjectMapper mapper) {
+    public ImageCacheStore(JdbcTemplate jdbc, ObjectMapper mapper, SearchIndex searchIndex) {
         this.jdbc = jdbc;
         this.mapper = mapper;
+        this.searchIndex = searchIndex;
     }
 
     @PostConstruct
     void initSchema() {
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS posts (
-                  id            TEXT PRIMARY KEY,
-                  clip_id       TEXT NOT NULL,
-                  url           TEXT NOT NULL,
-                  title         TEXT NOT NULL,
-                  og_title      TEXT NOT NULL,
-                  selected_text TEXT NOT NULL,
-                  description   TEXT NOT NULL,
-                  page_text     TEXT NOT NULL DEFAULT '',
-                  tags          TEXT NOT NULL,
-                  created_at    TEXT NOT NULL
+                  id            VARCHAR PRIMARY KEY,
+                  clip_id       VARCHAR NOT NULL,
+                  url           VARCHAR NOT NULL,
+                  title         VARCHAR NOT NULL,
+                  og_title      VARCHAR NOT NULL,
+                  selected_text CLOB NOT NULL,
+                  description   CLOB NOT NULL,
+                  page_text     CLOB NOT NULL DEFAULT '',
+                  tags          VARCHAR NOT NULL,
+                  created_at    VARCHAR NOT NULL
                 )""");
-
-        // Migration: add page_text to existing DBs that predate this column
-        List<Map<String, Object>> cols = jdbc.queryForList("PRAGMA table_info(posts)");
-        boolean hasPageText = cols.stream().anyMatch(c -> "page_text".equals(c.get("name")));
-        if (!hasPageText) {
-            jdbc.execute("ALTER TABLE posts ADD COLUMN page_text TEXT NOT NULL DEFAULT ''");
-        }
 
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS cached_images (
-                  id             TEXT PRIMARY KEY,
-                  post_id        TEXT NOT NULL,
-                  original_url   TEXT NOT NULL,
-                  local_path     TEXT,
-                  thumbnail_path TEXT,
-                  alt_text       TEXT NOT NULL,
+                  id             VARCHAR PRIMARY KEY,
+                  post_id        VARCHAR NOT NULL,
+                  original_url   VARCHAR NOT NULL,
+                  local_path     VARCHAR,
+                  thumbnail_path VARCHAR,
+                  alt_text       VARCHAR NOT NULL,
                   width          INTEGER,
                   height         INTEGER,
-                  content_type   TEXT,
-                  byte_size      INTEGER,
-                  sha256         TEXT,
-                  kind           TEXT NOT NULL,
+                  content_type   VARCHAR,
+                  byte_size      BIGINT,
+                  sha256         VARCHAR,
+                  kind           VARCHAR NOT NULL,
                   rank_order     INTEGER NOT NULL,
                   selected       INTEGER NOT NULL DEFAULT 1,
-                  cached_at      TEXT,
-                  cache_status   TEXT NOT NULL,
-                  cache_error    TEXT,
+                  cached_at      VARCHAR,
+                  cache_status   VARCHAR NOT NULL,
+                  cache_error    VARCHAR,
                   FOREIGN KEY (post_id) REFERENCES posts(id)
                 )""");
 
-        // FTS5 full-text index
-        jdbc.execute("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS posts_fts USING fts5(
-                  post_id    UNINDEXED,
-                  title,
-                  og_title,
-                  selected_text,
-                  description,
-                  tags_text,
-                  page_text,
-                  tokenize   = 'porter unicode61'
-                )""");
-
-        // Backfill FTS for any posts not yet indexed
-        jdbc.execute("""
-                INSERT INTO posts_fts(post_id, title, og_title, selected_text, description, tags_text, page_text)
-                SELECT id, title, og_title, selected_text, description, tags, page_text
-                FROM posts
-                WHERE id NOT IN (SELECT post_id FROM posts_fts)""");
+        // Keep the Lucene index in sync with the table on every startup
+        searchIndex.reindexAll(findAllPosts());
     }
 
     // ── Write ─────────────────────────────────────────────────────────────────
@@ -107,11 +85,7 @@ public class ImageCacheStore {
                 post.selectedText(), post.description(), post.pageText(),
                 tagsJson, post.createdAt());
 
-        jdbc.update("""
-                INSERT INTO posts_fts(post_id, title, og_title, selected_text, description, tags_text, page_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                post.id(), post.title(), post.ogTitle(), post.selectedText(),
-                post.description(), String.join(" ", post.tags()), post.pageText());
+        searchIndex.index(post);
     }
 
     public void saveImage(CachedImage img) {
@@ -137,21 +111,7 @@ public class ImageCacheStore {
                 WHERE id = ?""",
                 title, selectedText, tagsJson, id);
 
-        // Re-index FTS with updated fields (preserve description + page_text from DB)
-        String tagsText = String.join(" ", tags);
-        List<Object[]> rows = jdbc.query(
-                "SELECT description, page_text FROM posts WHERE id = ?",
-                (rs, rn) -> new Object[]{ rs.getString("description"), nvl(rs.getString("page_text")) },
-                id);
-        if (!rows.isEmpty()) {
-            String desc     = (String) rows.get(0)[0];
-            String pageText = (String) rows.get(0)[1];
-            jdbc.update("DELETE FROM posts_fts WHERE post_id = ?", id);
-            jdbc.update("""
-                    INSERT INTO posts_fts(post_id, title, og_title, selected_text, description, tags_text, page_text)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    id, title, "", selectedText, desc, tagsText, pageText);
-        }
+        findPost(id).ifPresent(searchIndex::index);
     }
 
     public void updateSelectedImages(String postId, List<String> keepIds) {
@@ -169,8 +129,8 @@ public class ImageCacheStore {
                 "SELECT * FROM cached_images WHERE post_id = ?", this::mapImage, id);
 
         jdbc.update("DELETE FROM cached_images WHERE post_id = ?", id);
-        jdbc.update("DELETE FROM posts_fts WHERE post_id = ?", id);
         jdbc.update("DELETE FROM posts WHERE id = ?", id);
+        searchIndex.delete(id);
 
         return images;
     }
@@ -214,12 +174,10 @@ public class ImageCacheStore {
     }
 
     public List<SavedPost> searchPosts(String query) {
-        String ftsQuery = toFtsQuery(query);
-        if (ftsQuery.isEmpty()) return findAllPosts();
+        List<String> terms = tokenize(query);
+        if (terms.isEmpty()) return findAllPosts();
 
-        List<String> ids = jdbc.query(
-                "SELECT post_id FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank",
-                (rs, rn) -> rs.getString("post_id"), ftsQuery);
+        List<String> ids = searchIndex.search(terms);
         if (ids.isEmpty()) return List.of();
 
         String ph = ids.stream().map(s -> "?").collect(Collectors.joining(","));
@@ -228,7 +186,7 @@ public class ImageCacheStore {
                 " FROM posts WHERE id IN (" + ph + ")",
                 this::mapPost, ids.toArray());
 
-        // Restore FTS rank order
+        // Restore Lucene relevance order
         Map<String, SavedPost> byId = posts.stream().collect(Collectors.toMap(SavedPost::id, p -> p));
         List<SavedPost> ranked = ids.stream()
                 .map(byId::get).filter(Objects::nonNull).toList();
@@ -295,15 +253,13 @@ public class ImageCacheStore {
                 rs.getString("cache_error"));
     }
 
-    private static String toFtsQuery(String raw) {
-        StringBuilder sb = new StringBuilder();
+    private static List<String> tokenize(String raw) {
+        List<String> terms = new java.util.ArrayList<>();
         for (String word : raw.trim().split("\\s+")) {
-            String clean = word.replaceAll("[^\\p{L}\\p{N}]", "");
-            if (clean.isEmpty()) continue;
-            if (sb.length() > 0) sb.append(' ');
-            sb.append(clean).append('*');
+            String clean = word.replaceAll("[^\\p{L}\\p{N}]", "").toLowerCase(java.util.Locale.ROOT);
+            if (!clean.isEmpty()) terms.add(clean);
         }
-        return sb.toString();
+        return terms;
     }
 
     private static String nvl(String s)    { return s != null ? s : ""; }

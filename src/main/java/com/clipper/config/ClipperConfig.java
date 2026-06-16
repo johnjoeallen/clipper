@@ -20,9 +20,12 @@ public class ClipperConfig {
         Files.createDirectories(dataDir.resolve("images/thumbnails"));
 
         HikariConfig cfg = new HikariConfig();
-        cfg.setJdbcUrl("jdbc:sqlite:" + dataDir.resolve("clipper.db").toAbsolutePath());
-        cfg.setDriverClassName("org.sqlite.JDBC");
-        cfg.setMaximumPoolSize(1);
+        cfg.setJdbcUrl("jdbc:h2:file:" + dataDir.resolve("clipperdb").toAbsolutePath()
+                + ";DB_CLOSE_ON_EXIT=FALSE");
+        cfg.setDriverClassName("org.h2.Driver");
+        cfg.setUsername("sa");
+        cfg.setPassword("");
+        cfg.setMaximumPoolSize(5);
         cfg.setConnectionTimeout(5_000);
         return new HikariDataSource(cfg);
     }

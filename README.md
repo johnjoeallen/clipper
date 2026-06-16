@@ -14,7 +14,7 @@ A browser bookmarklet and Spring Boot app for saving web page clips. Click the b
 6. The composer popup opens in two steps:
    - **Step 1 — Edit:** Review and edit the captured text, manage tags, and select one or more images from the candidate grid.
    - **Step 2 — Preview:** See how the card will look, with all selected images displayed together, then submit.
-7. On submit, the server caches each selected image locally, then saves the post to SQLite (including page body text for full-text search).
+7. On submit, the server caches each selected image locally, then saves the post to H2 (including page body text, which is indexed in Lucene for full-text search).
 8. The saved post page (`GET /post/{id}`) renders entirely from cached local images — no dependency on the original site.
 
 ---
@@ -41,7 +41,7 @@ All text extraction runs client-side in the browser, so it works behind logins a
 
 ### Full-text search
 
-The home page has a search bar that queries all saved posts via SQLite FTS5. Searching uses the **porter stemmer** (so "running" matches "run") and prefix matching on each word. The FTS index covers:
+The home page has a search bar that queries all saved posts via a Lucene index. Searching uses an **English analyzer** (Porter stemming + stopword removal, so "running" matches "run") and prefix matching on each word. The index covers:
 
 - Title (OG title if edited, original title otherwise)
 - Selected / edited body text
@@ -100,7 +100,7 @@ When the user submits in Step 2, the server caches all selected images before sa
 - Filenames are derived from the SHA-256 of the downloaded bytes (e.g. `a3f8...c2.jpg`); the original filename is not used.
 - Duplicate images (same bytes, different URLs) are deduplicated by checksum — only one file is stored.
 - A thumbnail is generated alongside each original (default max dimension: 400 px).
-- Image metadata (original URL, local path, thumbnail path, dimensions, content type, checksum, cache status) is stored in SQLite.
+- Image metadata (original URL, local path, thumbnail path, dimensions, content type, checksum, cache status) is stored in H2.
 
 **On failure:**
 - If any selected image cannot be cached, the save is aborted and the composer displays a per-image error. The user can go back, deselect the failing image, and retry.
@@ -109,7 +109,8 @@ When the user submits in Step 2, the server caches all selected images before sa
 
 ```
 ~/.clipper/
-  clipper.db            # SQLite database (posts + image metadata + FTS index)
+  clipperdb.mv.db        # H2 database (posts + image metadata)
+  search-index/          # Lucene full-text index
   images/
     originals/          # Full-size cached images (<sha256>.<ext>)
     thumbnails/         # Resized copies (<sha256>.<ext>)
@@ -117,7 +118,7 @@ When the user submits in Step 2, the server caches all selected images before sa
 
 ### Home page
 
-`GET /` shows a card grid of all saved posts, most recent first. Each card shows the primary image (thumbnail preferred), title, excerpt, and tags. Clicking a card opens the post view; the ✎ icon opens the edit page directly. A search bar at the top filters cards via full-text search.
+`GET /` shows a card grid of all saved posts, most recent first. Each card shows the primary image (thumbnail preferred), title, excerpt, and tags. Clicking a card opens the post view; the ✎ icon opens the edit page directly, and the 🗑 icon deletes the post after a confirmation prompt. A search bar at the top filters cards via full-text search.
 
 ### Saved post view
 
@@ -126,7 +127,7 @@ When the user submits in Step 2, the server caches all selected images before sa
 - Selected cached images (only those marked as selected)
 - Selected / edited body text
 - Tags
-- Home and Edit buttons in the header
+- Home, Edit, and Delete buttons in the header (Delete asks for confirmation)
 
 ### Editing
 
@@ -135,7 +136,7 @@ When the user submits in Step 2, the server caches all selected images before sa
 - Toggle which cached images are shown (click to select/deselect)
 - Fetch fresh image candidates from the original source URL with **Fetch from source** — the server re-fetches and Jsoup-parses the page, returning image candidates you can select to cache and add
 
-Edits save via JSON (`POST /post/{id}/edit`) and re-index the post in the FTS table.
+Edits save via JSON (`POST /post/{id}/edit`) and re-index the post in Lucene.
 
 ### Theme
 
@@ -151,8 +152,8 @@ All pages support dark and light themes with a toggle button in the header. The 
 | Templates | Thymeleaf |
 | Bookmarklet | Vanilla JS (ES5, no dependencies) |
 | Clip store | In-memory `ConcurrentHashMap` with 1-hour TTL |
-| Post store | SQLite via Spring JDBC (`~/.clipper/clipper.db`) |
-| Full-text search | SQLite FTS5 with porter stemmer |
+| Post store | H2 (file-based) via Spring JDBC (`~/.clipper/clipperdb.mv.db`) |
+| Full-text search | Apache Lucene with `EnglishAnalyzer` (Porter stemmer) |
 | Image cache | Local filesystem (`~/.clipper/images/`) |
 | Thumbnails | Thumbnailator |
 | HTML parsing | Jsoup (source-image fetch on edit page) |
@@ -162,7 +163,7 @@ All pages support dark and light themes with a toggle button in the header. The 
 
 ## Database
 
-Clipper uses a single SQLite file at `~/.clipper/clipper.db` (configurable via `clipper.data-dir`). The schema is created automatically on first run; existing databases are migrated forward via `PRAGMA table_info` checks on startup.
+Clipper uses a file-based H2 database at `~/.clipper/clipperdb.mv.db` (configurable via `clipper.data-dir`). The schema is created automatically on first run via `CREATE TABLE IF NOT EXISTS`.
 
 ### Tables
 
@@ -170,61 +171,50 @@ Clipper uses a single SQLite file at `~/.clipper/clipper.db` (configurable via `
 
 | Column | Type | Notes |
 |---|---|---|
-| `id` | TEXT PK | UUID |
-| `clip_id` | TEXT | ID of the originating in-memory clip |
-| `url` | TEXT | Source page URL |
-| `title` | TEXT | Page title (`document.title`) |
-| `og_title` | TEXT | OG title; cleared to `''` after a manual edit |
-| `selected_text` | TEXT | User-selected or edited description |
-| `description` | TEXT | `<meta name="description">` |
-| `page_text` | TEXT | Visible body text captured by the bookmarklet (up to 100 KB) |
-| `tags` | TEXT | JSON array of tag strings |
-| `created_at` | TEXT | ISO-8601 instant |
+| `id` | VARCHAR PK | UUID |
+| `clip_id` | VARCHAR | ID of the originating in-memory clip |
+| `url` | VARCHAR | Source page URL |
+| `title` | VARCHAR | Page title (`document.title`) |
+| `og_title` | VARCHAR | OG title; cleared to `''` after a manual edit |
+| `selected_text` | CLOB | User-selected or edited description |
+| `description` | CLOB | `<meta name="description">` |
+| `page_text` | CLOB | Visible body text captured by the bookmarklet (up to 100 KB) |
+| `tags` | VARCHAR | JSON array of tag strings |
+| `created_at` | VARCHAR | ISO-8601 instant |
 
 **`cached_images`** — one row per candidate image per post.
 
 | Column | Type | Notes |
 |---|---|---|
-| `id` | TEXT PK | UUID |
-| `post_id` | TEXT FK | References `posts.id` |
-| `original_url` | TEXT | Source URL |
-| `local_path` | TEXT | Relative path under `images/originals/` |
-| `thumbnail_path` | TEXT | Relative path under `images/thumbnails/` |
-| `sha256` | TEXT | Hex SHA-256 of file bytes (used for deduplication) |
-| `cache_status` | TEXT | `cached` · `failed` · `rejected` |
+| `id` | VARCHAR PK | UUID |
+| `post_id` | VARCHAR FK | References `posts.id` |
+| `original_url` | VARCHAR | Source URL |
+| `local_path` | VARCHAR | Relative path under `images/originals/` |
+| `thumbnail_path` | VARCHAR | Relative path under `images/thumbnails/` |
+| `sha256` | VARCHAR | Hex SHA-256 of file bytes (used for deduplication) |
+| `cache_status` | VARCHAR | `cached` · `failed` · `rejected` |
 | `selected` | INTEGER | `1` = shown on the post, `0` = hidden |
 | `rank_order` | INTEGER | Display order |
 | … | | width, height, content_type, byte_size, alt_text, kind, cached_at, cache_error |
 
-### Full-text search (FTS5)
+### Full-text search (Lucene)
 
-A virtual FTS5 table `posts_fts` is created alongside the main tables:
+A Lucene index lives alongside the database at `~/.clipper/search-index/`, with one document per post covering these fields:
 
-```sql
-CREATE VIRTUAL TABLE posts_fts USING fts5(
-  post_id    UNINDEXED,
-  title,
-  og_title,
-  selected_text,
-  description,
-  tags_text,
-  page_text,
-  tokenize = 'porter unicode61'
-);
-```
+- `title`, `og_title`, `selected_text`, `description`, `tags_text`, `page_text`
 
-The **porter stemmer** reduces words to their root form before indexing, so a search for "running" also matches "run", "runs", and "runner". The `unicode61` tokenizer handles non-ASCII text correctly.
+Each field is analyzed with Lucene's `EnglishAnalyzer`, which stems words to their root form (Porter stemming) and strips common stopwords — so a search for "running" also matches "run", "runs", and "runner".
 
-`posts_fts` is kept in sync with `posts`:
-- Populated on initial startup for any rows not yet indexed.
-- A new row is inserted when a post is saved.
-- The row is deleted and re-inserted when a post is edited.
+The index is kept in sync with the `posts` table:
+- Rebuilt from scratch on every startup (`IndexWriter.deleteAll()` + re-add from all DB rows), so it can never drift out of sync with the database.
+- A document is upserted (`updateDocument`, keyed by post ID) when a post is saved or edited.
+- The document is deleted when a post is deleted.
 
-Searches run as `posts_fts MATCH ?` with each query word suffixed by `*` for prefix matching, and results are ordered by the built-in `rank` column (BM25 relevance).
+Each query word is matched as a `BooleanQuery` combining a prefix query (raw term) and a term query (stemmed form) across every field, OR'd together; per-word queries are then AND'd, so all words must match somewhere. Results are returned in Lucene's default BM25 relevance order.
 
 ### Connection pool
 
-SQLite allows only one writer at a time. HikariCP is configured with `maximum-pool-size=1` to prevent concurrent write contention. Reads and writes all share the single pooled connection.
+Unlike SQLite, H2 supports concurrent writers, so HikariCP is configured with `maximum-pool-size=5`.
 
 ---
 
@@ -261,7 +251,7 @@ Replace `http://localhost:8080` with your deployed app's base URL. The bookmarkl
 All settings are in `application.properties`. The defaults are shown below.
 
 ```properties
-# Directory for the SQLite database and image cache
+# Directory for the H2 database, Lucene index, and image cache
 clipper.data-dir=${user.home}/.clipper
 
 # Image download limits
@@ -327,7 +317,7 @@ Opens the composer page for the given clip ID. Returns 404 if the clip has expir
 
 ### `POST /clip/{id}/save`
 
-Caches the selected images and saves the post to SQLite. Returns 422 if any image fails to cache.
+Caches the selected images and saves the post to H2. Returns 422 if any image fails to cache.
 
 **Request body**
 
@@ -390,6 +380,16 @@ Saves edits to a post. Accepts and returns JSON.
 
 ```json
 { "postUrl": "/post/661f9511-..." }
+```
+
+### `POST /post/{id}/delete`
+
+Deletes a post, its cached image rows, and its Lucene document. Underlying image files are deleted from disk too, unless their checksum is still referenced by another post. Returns 404 if the post doesn't exist.
+
+**Response**
+
+```json
+{ "status": "deleted" }
 ```
 
 ### `GET /post/{id}/source-images`
