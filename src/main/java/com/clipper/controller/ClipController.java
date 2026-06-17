@@ -13,9 +13,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Controller
 public class ClipController {
@@ -73,6 +75,61 @@ public class ClipController {
                 "clipId",     entry.id(),
                 "composeUrl", "/clip/" + entry.id()
         ));
+    }
+
+    // ── GET /clip/quick ───────────────────────────────────────────────────────
+    // Fallback for CSP-restricted pages that block script injection or fetch.
+    // Accepts minimal data via query params and redirects to the compose page.
+
+    @GetMapping("/clip/quick")
+    public String quickClip(
+            @RequestParam String url,
+            @RequestParam(defaultValue = "") String title,
+            @RequestParam(defaultValue = "") String text,
+            @RequestParam(defaultValue = "") String ogTitle,
+            @RequestParam(defaultValue = "") String desc,
+            @RequestParam(defaultValue = "") String kw,
+            @RequestParam(defaultValue = "") String cu,
+            @RequestParam(required = false) List<String> img) {
+
+        if (url == null || url.isBlank() || url.length() > MAX_URL_LEN
+                || (!url.startsWith("http://") && !url.startsWith("https://"))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid url");
+        }
+
+        String safeTitle   = title.length()   > MAX_TITLE ? title.substring(0, MAX_TITLE)  : title;
+        String safeText    = text.length()    > MAX_TEXT  ? text.substring(0, MAX_TEXT)     : text;
+        String safeOgTitle = ogTitle.length() > MAX_TITLE ? ogTitle.substring(0, MAX_TITLE) : ogTitle;
+        String safeDesc    = desc.length()    > MAX_DESC  ? desc.substring(0, MAX_DESC)     : desc;
+        String safeCu      = cu.length()      > MAX_URL_LEN ? "" : cu;
+
+        List<ImageCandidate> images = img == null ? List.of() :
+                img.stream()
+                        .filter(u -> u != null && !u.isBlank()
+                                && u.length() <= MAX_IMG_SRC
+                                && (u.startsWith("http://") || u.startsWith("https://")))
+                        .distinct()
+                        .limit(MAX_IMAGES)
+                        .map(u -> new ImageCandidate(u, "", "og_image", null, null))
+                        .collect(Collectors.toList());
+
+        String ogImageStr = images.isEmpty() ? "" : images.get(0).src();
+
+        List<String> keywords = kw.isBlank() ? List.of() :
+                tagFilter.filter(
+                        Arrays.stream(kw.split(","))
+                                .map(String::strip)
+                                .filter(k -> !k.isBlank() && k.length() <= 100)
+                                .distinct()
+                                .limit(50)
+                                .collect(Collectors.toList()));
+
+        ClipPayload payload = new ClipPayload(
+                url, safeTitle, safeText, safeDesc, safeCu,
+                safeOgTitle, "", ogImageStr,
+                images, keywords, "");
+        ClipEntry entry = clipStore.save(payload);
+        return "redirect:/clip/" + entry.id();
     }
 
     // ── GET /clip/{id} ────────────────────────────────────────────────────────

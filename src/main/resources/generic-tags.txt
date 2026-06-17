@@ -264,6 +264,14 @@ mother
 number
 end
 
+# Platform-generic terms (same on every page of the site, not content-specific)
+sharing
+upload
+uploads
+camera phone
+video phone
+free streaming
+
 # HTML / encoding artifacts
 nbsp
 amp

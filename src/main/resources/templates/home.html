@@ -41,18 +41,28 @@
             background: var(--bg);
             color: var(--text);
             margin: 0;
-            padding: 20px 16px 40px;
+            padding: 0 16px 40px;
             font-size: 15px;
             line-height: 1.5;
         }
 
         /* ── Top bar ── */
+        .topbar-wrapper {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg);
+            padding: 20px 0 12px;
+            margin: 0 -16px 24px;
+            padding-left: 16px;
+            padding-right: 16px;
+        }
         .topbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
             max-width: 1100px;
-            margin: 0 auto 24px;
+            margin: 0 auto;
         }
         .topbar-title {
             display: flex;
@@ -126,6 +136,18 @@
             cursor: pointer;
         }
         #theme-toggle:hover { color: var(--text); }
+
+        #copy-bookmarklet {
+            background: var(--surface);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 0.8rem;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        #copy-bookmarklet:hover { color: var(--accent); border-color: var(--accent); }
 
         /* ── Card grid ── */
         .grid {
@@ -273,6 +295,7 @@
 </head>
 <body>
 
+<div class="topbar-wrapper">
 <div class="topbar">
     <a class="topbar-title" href="/" title="Home">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 18" fill="currentColor" aria-hidden="true" style="width:1.5em;height:1em">
@@ -294,6 +317,8 @@
         <button class="search-btn" type="submit" aria-label="Search">&#x2315;</button>
     </form>
     <button id="theme-toggle" onclick="toggleTheme()"></button>
+    <button id="copy-bookmarklet" type="button">Copy bookmarklet</button>
+</div>
 </div>
 
 <!-- Card grid -->
@@ -363,10 +388,52 @@
 <div class="empty" th:if="${posts.isEmpty() && q.isEmpty()}">
     <div class="empty-icon">&#128203;</div>
     <p class="empty-heading">No clips saved yet</p>
-    <p class="empty-body">Use the bookmarklet to clip a page, then submit in the composer.</p>
+    <p class="empty-body">Copy the bookmarklet below and add it to your browser's bookmarks bar.</p>
 </div>
 
 <script>
+    (function () {
+        var base = window.location.origin;
+        // Open the window immediately (user-gesture context) so popup blockers
+        // can't interfere. clipper.js navigates the same named window to the
+        // full compose page if it loads. On CSP-restricted sites (YouTube,
+        // SharePoint) the script fails to load and the window stays at quick clip.
+        // DOM reads (querySelector, getSelection) are never blocked by CSP.
+        var bm = 'javascript:(function(){'
+            + 'var _b=' + JSON.stringify(base) + ';'
+            + 'var gm=function(n){var el=document.querySelector("meta[name=\\""+n+"\\"],meta[property=\\""+n+"\\"]");return el?(el.getAttribute("content")||""):""};'
+            + 'var _u=encodeURIComponent(location.href);'
+            + 'var _t=encodeURIComponent(document.title||"");'
+            + 'var _s=encodeURIComponent((window.getSelection&&window.getSelection().toString())||"");'
+            + 'var _ogt=encodeURIComponent(gm("og:title"));'
+            + 'var _desc=encodeURIComponent((gm("description")||gm("og:description")).substring(0,500));'
+            + 'var _cu=encodeURIComponent((document.querySelector("link[rel=\\"canonical\\"]")||{href:""}).href);'
+            + 'var kws=[],seen={};'
+            + 'var addKw=function(s){if(!s)return;String(s).split(/[,;]+/).forEach(function(k){k=k.trim().toLowerCase();if(k&&k.length<=100&&!seen[k]){seen[k]=1;kws.push(k);}});};'
+            + 'addKw(gm("keywords"));addKw(gm("news_keywords"));addKw(gm("article:section"));'
+            + 'try{[].slice.call(document.querySelectorAll("meta[property=\\"article:tag\\"]")).forEach(function(e){addKw(e.getAttribute("content"));});}catch(e){}'
+            + 'var imgs=[],imgSeen={};'
+            + 'var addImg=function(u){if(!u||imgSeen[u]||imgs.length>=8)return;imgSeen[u]=1;imgs.push(u);};'
+            + 'addImg(gm("twitter:image"));addImg(gm("twitter:image:src"));'
+            + 'try{[].slice.call(document.querySelectorAll("meta[property=\\"og:image\\"]")).forEach(function(e){addImg(e.getAttribute("content")||"");});}catch(e){}'
+            + 'try{[].slice.call(document.querySelectorAll("script[type=\\"application/ld+json\\"]")).forEach(function(e){try{var d=JSON.parse(e.textContent||"");(Array.isArray(d)?d:[d]).forEach(function(it){if(it&&it.keywords)addKw(typeof it.keywords==="string"?it.keywords:it.keywords.join(","));if(it&&it.genre)addKw(typeof it.genre==="string"?it.genre:it.genre.join(","));if(it&&it.thumbnailUrl){var tn=it.thumbnailUrl;(Array.isArray(tn)?tn:[tn]).forEach(addImg);}});}catch(ex){}});}catch(e){}'
+            + 'var _kw=encodeURIComponent(kws.slice(0,30).join(","));'
+            + 'var _imgP=imgs.map(function(u){return"img="+encodeURIComponent(u);}).join("&");'
+            + 'window.__clipper_win=window.open(_b+"/clip/quick?url="+_u+"&title="+_t+"&text="+_s+"&ogTitle="+_ogt+(_imgP?"&"+_imgP:"")+"&desc="+_desc+"&kw="+_kw+"&cu="+_cu,"bb_clip","width=900,height=720,scrollbars=yes,resizable=yes");'
+            + 'var el=document.createElement("script");'
+            + 'el.src=_b+"/clipper.js";'
+            + 'document.head.appendChild(el);'
+            + '})()';
+
+        var btn = document.getElementById('copy-bookmarklet');
+        btn.addEventListener('click', function () {
+            navigator.clipboard.writeText(bm).then(function () {
+                btn.textContent = 'Copied!';
+                setTimeout(function () { btn.textContent = 'Copy bookmarklet'; }, 2000);
+            });
+        });
+    }());
+
     var _theme = localStorage.getItem('clipper-theme') || 'dark';
     function applyTheme(t) {
         _theme = t;

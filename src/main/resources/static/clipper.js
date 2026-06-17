@@ -214,8 +214,19 @@
         'width=900,height=720,scrollbars=yes,resizable=yes'
       );
     })
-    .catch(function (err) {
-      alert('Backbrowse clipper error: ' + err.message);
+    .catch(function () {
+      // The bookmarklet already opened the window via /clip/quick.
+      // Only open a new one if that was somehow blocked.
+      if (!window.__clipper_win || window.__clipper_win.closed) {
+        var qs = '?url='   + encodeURIComponent(payload.url)
+               + '&title=' + encodeURIComponent(payload.title || '')
+               + '&text='  + encodeURIComponent(payload.selectedText || '');
+        window.open(
+          _appBase + '/clip/quick' + qs,
+          'bb_clip',
+          'width=900,height=720,scrollbars=yes,resizable=yes'
+        );
+      }
     });
   }
 
