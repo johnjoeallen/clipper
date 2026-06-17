@@ -1,0 +1,273 @@
+# Lucene's EnglishAnalyzer.ENGLISH_STOP_WORDS_SET is loaded first at runtime.
+# Add anything here that Lucene doesn't cover.
+
+# Common web / UI phrases
+read more
+click here
+sign in
+sign up
+log in
+log out
+sign out
+get started
+learn more
+find out more
+contact us
+about us
+our team
+home page
+homepage
+landing page
+privacy policy
+terms of service
+terms and conditions
+cookie policy
+subscribe
+newsletter
+follow us
+share this
+back to top
+see all
+view all
+show more
+load more
+continue reading
+
+# Vague content / metadata words
+news
+article
+articles
+post
+posts
+blog
+blogs
+page
+pages
+content
+update
+updates
+info
+information
+general
+misc
+miscellaneous
+other
+others
+various
+uncategorized
+default
+example
+sample
+test
+draft
+new
+featured
+popular
+trending
+latest
+recent
+top
+best
+related
+similar
+recommended
+tag
+tags
+category
+categories
+archive
+archives
+section
+type
+
+# Generic verbs and gerunds
+buy
+use
+make
+find
+try
+add
+set
+take
+run
+keep
+put
+let
+give
+come
+know
+think
+need
+feel
+become
+include
+includes
+included
+require
+requires
+required
+support
+supports
+allow
+allows
+fly
+flying
+flight
+tow
+towing
+mount
+mounting
+mounted
+upgrade
+upgrades
+upgraded
+install
+installing
+installed
+connect
+purchase
+order
+ship
+build
+building
+
+# Generic adjectives and participles
+optional
+available
+compatible
+required
+supported
+good
+great
+free
+full
+large
+small
+big
+long
+short
+high
+low
+fast
+slow
+easy
+hard
+simple
+basic
+standard
+advanced
+special
+extra
+additional
+vertical
+horizontal
+external
+internal
+molded
+assembled
+upgraded
+experienced
+brushless
+
+# Common nouns too vague to classify
+item
+items
+product
+products
+feature
+features
+option
+options
+model
+version
+size
+color
+weight
+design
+style
+shape
+kit
+set
+pack
+package
+unit
+part
+parts
+piece
+pieces
+list
+step
+steps
+note
+notes
+detail
+details
+image
+images
+photo
+photos
+video
+videos
+review
+reviews
+guide
+guides
+manual
+manuals
+
+# Generic standalone words that only make sense in context
+wing
+wings
+wheel
+wheels
+water
+snow
+sand
+wood
+metal
+plastic
+rubber
+glass
+air
+wind
+light
+heat
+power
+motor
+engine
+body
+head
+hand
+arm
+leg
+eye
+pilot
+pilots
+crew
+member
+members
+user
+users
+world
+life
+time
+day
+year
+way
+place
+thing
+things
+work
+line
+bull
+mother
+number
+end
+
+# HTML / encoding artifacts
+nbsp
+amp
+quot
+apos
+lt
+gt

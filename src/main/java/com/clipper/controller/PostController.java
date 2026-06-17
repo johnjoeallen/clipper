@@ -24,13 +24,16 @@ public class PostController {
     private final ImageCacheStore   store;
     private final ImageCacheService cacheService;
     private final PageImageFetcher  pageFetcher;
+    private final GenericTagFilter  tagFilter;
 
     public PostController(ImageCacheStore store,
                           ImageCacheService cacheService,
-                          PageImageFetcher pageFetcher) {
+                          PageImageFetcher pageFetcher,
+                          GenericTagFilter tagFilter) {
         this.store        = store;
         this.cacheService = cacheService;
         this.pageFetcher  = pageFetcher;
+        this.tagFilter    = tagFilter;
     }
 
     // ── View ─────────────────────────────────────────────────────────────────
@@ -84,12 +87,13 @@ public class PostController {
         if (selectedText.length() > MAX_TEXT) selectedText = selectedText.substring(0, MAX_TEXT);
 
         // Sanitize tags
-        List<String> tags = req.tags() == null ? List.of() :
+        List<String> tags = tagFilter.filter(
+                req.tags() == null ? List.of() :
                 req.tags().stream()
                         .filter(t -> t != null && !t.isBlank())
                         .map(t -> t.strip().toLowerCase())
                         .filter(t -> t.length() <= 100)
-                        .distinct().limit(50).toList();
+                        .distinct().limit(50).toList());
 
         // Update image selection for existing cached images
         List<String> keepIds = req.keepImageIds() == null ? List.of() : req.keepImageIds();

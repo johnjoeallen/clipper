@@ -31,13 +31,16 @@ public class ClipController {
     private final ClipStore        clipStore;
     private final ImageCacheService imageCacheService;
     private final ImageCacheStore   imageCacheStore;
+    private final GenericTagFilter  tagFilter;
 
     public ClipController(ClipStore clipStore,
                           ImageCacheService imageCacheService,
-                          ImageCacheStore imageCacheStore) {
+                          ImageCacheStore imageCacheStore,
+                          GenericTagFilter tagFilter) {
         this.clipStore         = clipStore;
         this.imageCacheService = imageCacheService;
         this.imageCacheStore   = imageCacheStore;
+        this.tagFilter         = tagFilter;
     }
 
     // ── POST /clip ────────────────────────────────────────────────────────────
@@ -112,14 +115,15 @@ public class ClipController {
                     .body(Map.of("error", "Image caching failed", "details", errors));
         }
 
-        List<String> tags = req.tags() == null ? List.of() :
+        List<String> tags = tagFilter.filter(
+                req.tags() == null ? List.of() :
                 req.tags().stream()
                         .filter(t -> t != null && !t.isBlank())
                         .map(t -> t.strip().toLowerCase())
                         .filter(t -> t.length() <= 100)
                         .distinct()
                         .limit(50)
-                        .toList();
+                        .toList());
 
         ClipPayload p = entry.payload();
         String selectedText = req.selectedText() != null ? req.selectedText() : p.selectedText();
@@ -156,14 +160,15 @@ public class ClipController {
                         .limit(MAX_IMAGES)
                         .toList();
 
-        List<String> keywords = p.keywords() == null ? List.of() :
+        List<String> keywords = tagFilter.filter(
+                p.keywords() == null ? List.of() :
                 p.keywords().stream()
                         .filter(k -> k != null && !k.isBlank())
                         .map(k -> k.strip().toLowerCase())
                         .filter(k -> k.length() <= 100)
                         .distinct()
                         .limit(50)
-                        .toList();
+                        .toList());
 
         String pageText = nvl(p.pageText());
         if (pageText.length() > MAX_PAGE_TEXT) pageText = pageText.substring(0, MAX_PAGE_TEXT);
