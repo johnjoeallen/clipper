@@ -152,6 +152,57 @@
     return candidates.slice(0, 30); // server will truncate to 20
   }
 
+  function collectRelatedLinks() {
+    var seen = Object.create(null);
+    var links = [];
+
+    function add(rawUrl, title) {
+      if (!rawUrl) return;
+      var abs;
+      try { abs = new URL(String(rawUrl).trim(), window.location.href).href; } catch (_) { return; }
+      if (!abs.startsWith('http://') && !abs.startsWith('https://')) return;
+      if (abs === window.location.href) return;
+      if (seen[abs]) return;
+      seen[abs] = true;
+      links.push({ url: abs, title: String(title || '').trim().substring(0, 200) });
+    }
+
+    // <link rel="related"> elements in <head>
+    try {
+      document.querySelectorAll('link[rel~="related"]').forEach(function (el) {
+        add(el.getAttribute('href'), el.getAttribute('title') || '');
+      });
+    } catch (_) {}
+
+    // <a rel="related"> anchors in the page body
+    try {
+      document.querySelectorAll('a[rel~="related"]').forEach(function (el) {
+        add(el.getAttribute('href'), el.textContent || '');
+      });
+    } catch (_) {}
+
+    // JSON-LD relatedLink field (string or array)
+    try {
+      document.querySelectorAll('script[type="application/ld+json"]').forEach(function (el) {
+        try {
+          var data = JSON.parse(el.textContent || el.innerText || '');
+          var items = Array.isArray(data) ? data : [data];
+          items.forEach(function (item) {
+            if (!item) return;
+            var rl = item.relatedLink;
+            if (rl) {
+              (Array.isArray(rl) ? rl : [rl]).forEach(function (u) {
+                if (typeof u === 'string') add(u, '');
+              });
+            }
+          });
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    return links.slice(0, 10);
+  }
+
   function collectPageText() {
     try {
       var clone = document.body.cloneNode(true);
@@ -183,7 +234,8 @@
       ogImage:       getMeta('og:image'),
       images:        collectImages(),
       keywords:      collectKeywords(),
-      pageText:      collectPageText()
+      pageText:      collectPageText(),
+      relatedLinks:  collectRelatedLinks()
     };
 
     try {

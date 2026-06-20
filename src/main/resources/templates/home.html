@@ -152,11 +152,37 @@
         /* ── Card grid ── */
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 16px;
+            gap: 14px;
             max-width: 1100px;
             margin: 0 auto;
+            grid-template-columns: repeat(2, 1fr);
         }
+        .grid[data-cols="1"] { grid-template-columns: calc((100% - 14px) / 2 * 1.2); justify-content: center; }
+        .grid[data-cols="2"] { grid-template-columns: repeat(2, 1fr); }
+        .grid[data-cols="3"] { grid-template-columns: repeat(3, 1fr); }
+
+        /* ── Column switcher ── */
+        .col-switcher {
+            display: flex;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        .col-btn {
+            background: var(--surface);
+            color: var(--text-muted);
+            border: none;
+            border-right: 1px solid var(--border);
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            font-family: inherit;
+            cursor: pointer;
+            line-height: 1;
+            min-width: 28px;
+        }
+        .col-btn:last-child { border-right: none; }
+        .col-btn:hover { color: var(--text); background: var(--bg); }
+        .col-btn.active { background: var(--accent); color: #fff; }
 
         /* ── Card ── */
         .card {
@@ -316,12 +342,17 @@
         <button class="clear-btn" id="search-clear" type="button" aria-label="Clear search">&#x2715;</button>
         <button class="search-btn" type="submit" aria-label="Search">&#x2315;</button>
     </form>
+    <div class="col-switcher" id="col-switcher">
+        <button class="col-btn" data-cols="1" title="1 column">1</button>
+        <button class="col-btn" data-cols="2" title="2 columns">2</button>
+        <button class="col-btn" data-cols="3" title="3 columns">3</button>
+    </div>
     <button id="theme-toggle" onclick="toggleTheme()"></button>
     <button id="copy-bookmarklet" type="button">Copy bookmarklet</button>
 </div>
 </div>
 
-<!-- Card grid -->
+<!-- Card list -->
 <div class="grid" th:if="${!posts.isEmpty()}">
     <div class="card"
          th:each="post : ${posts}"
@@ -329,7 +360,7 @@
          role="link" tabindex="0"
          th:attr="aria-label=${!post.ogTitle().isEmpty() ? post.ogTitle() : post.title()}">
 
-        <!-- Primary image (first selected cached image, thumbnail preferred) -->
+        <!-- Primary image -->
         <img class="card-image"
              th:if="${post.primaryImage() != null}"
              th:src="${post.primaryImage().effectiveImageUrl()}"
@@ -361,7 +392,8 @@
 
         <div class="card-footer">
             <span class="card-date"
-                  th:text="${post.createdAt().length() >= 10 ? post.createdAt().substring(0, 10) : ''}"></span>
+                  th:with="d=${(!post.updatedAt().isEmpty() ? post.updatedAt() : post.createdAt())}"
+                  th:text="${d.length() >= 10 ? d.substring(0, 10) : ''}"></span>
             <div class="card-actions">
                 <a class="card-edit"
                    th:href="@{/post/{id}/edit(id=${post.id()})}"
@@ -443,6 +475,20 @@
     }
     function toggleTheme() { applyTheme(_theme === 'light' ? 'dark' : 'light'); }
     applyTheme(_theme);
+
+    /* ── Column switcher ── */
+    function setCols(n) {
+        var grid = document.querySelector('.grid');
+        if (grid) grid.dataset.cols = n;
+        document.querySelectorAll('.col-btn').forEach(function(b) {
+            b.classList.toggle('active', parseInt(b.dataset.cols, 10) === n);
+        });
+        localStorage.setItem('clipper-cols', n);
+    }
+    document.querySelectorAll('.col-btn').forEach(function(b) {
+        b.addEventListener('click', function() { setCols(parseInt(b.dataset.cols, 10)); });
+    });
+    setCols(parseInt(localStorage.getItem('clipper-cols') || '2', 10));
 
     /* ── Search: clear button + auto-focus ── */
     var searchInput = document.getElementById('search-input');

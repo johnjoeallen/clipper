@@ -160,6 +160,19 @@
             color: var(--text);
         }
 
+        /* ── Related links ── */
+        .related-list { display: flex; flex-direction: column; gap: 4px; }
+        .related-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: block;
+        }
+        .related-link:hover { text-decoration: underline; }
+
         /* ── Tags ── */
         .tag-list {
             display: flex;
@@ -230,6 +243,21 @@
              th:if="${post.selectedText().isEmpty() && !post.description().isEmpty()}">
         <h2 class="section-label">Description</h2>
         <p class="post-body" th:text="${post.description()}"></p>
+    </section>
+
+    <!-- Related links -->
+    <section class="section" th:if="${!post.relatedLinks().isEmpty()}">
+        <h2 class="section-label">Related Links</h2>
+        <div class="related-list">
+            <a class="related-link"
+               th:each="link : ${post.relatedLinks()}"
+               th:href="${link.url()}"
+               th:with="lbl=${!link.title().isEmpty() ? link.title() : link.url()}"
+               th:text="${lbl.length() > 30 ? lbl.substring(0, 30) + '…' : lbl}"
+               th:title="${link.url()}"
+               target="_blank"
+               rel="noopener noreferrer"></a>
+        </div>
     </section>
 
     <!-- Tags -->

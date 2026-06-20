@@ -13,7 +13,9 @@ public record SavedPost(
         String       pageText,
         List<String> tags,
         String       createdAt,
-        List<CachedImage> images
+        String       updatedAt,
+        List<CachedImage> images,
+        List<RelatedLink> relatedLinks
 ) {
     public String host() {
         try { return new java.net.URI(url).getHost(); }

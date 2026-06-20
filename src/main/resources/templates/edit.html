@@ -189,7 +189,48 @@
             height: 100%;
             object-fit: cover;
             display: block;
+            pointer-events: none;
         }
+        .img-tile.dragging  { opacity: 0.35; }
+        .img-tile.drag-over { outline: 2px dashed var(--accent); outline-offset: -3px; }
+        .section.url-drag-over { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; }
+
+        /* ── Related links ── */
+        .empty-notice { color: var(--text-muted); font-size: 0.85rem; margin: 8px 0 0; font-style: italic; }
+        .related-list { display: flex; flex-direction: column; gap: 4px; }
+        .related-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        [data-theme="light"] .related-item { background: rgba(0,0,0,0.03); }
+        .related-item-link {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .related-item-link:hover { text-decoration: underline; }
+        .related-remove {
+            flex-shrink: 0;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 0 2px;
+            line-height: 1;
+            font-family: inherit;
+        }
+        .related-remove:hover { color: #e5484d; }
         .img-check {
             position: absolute;
             top: 6px;
@@ -318,7 +359,7 @@
         <div class="tag-chips" id="tag-chips"></div>
     </section>
 
-    <section class="section">
+    <section class="section" id="images-section">
         <h2 class="section-label">Images</h2>
 
         <!-- Cached images -->
@@ -331,6 +372,7 @@
                 <div class="img-tile"
                      th:classappend="${img.selected()} ? ' selected'"
                      th:attr="data-img-id=${img.id()}"
+                     draggable="true"
                      onclick="this.classList.toggle('selected')">
                     <img th:src="${img.effectiveImageUrl()}"
                          th:alt="${img.altText()}"
@@ -347,6 +389,12 @@
         </div>
         <div class="source-status" id="source-status"></div>
         <div class="img-grid" id="source-grid"></div>
+    </section>
+
+    <section class="section" id="related-section">
+        <h2 class="section-label">Related Links</h2>
+        <div class="related-list" id="related-list"></div>
+        <p class="empty-notice" id="related-empty">Drop a link here to add related resources</p>
     </section>
 
     <div class="actions">
@@ -415,7 +463,64 @@
         if (this.value.trim()) { addTag(this.value); this.value = ''; }
     });
 
-    /* ── Source image fetch ── */
+    /* ── Image drag helpers ── */
+    function isUrlDrag(e) {
+        return Array.from(e.dataTransfer.types)
+            .some(function(t) { return t === 'text/uri-list' || t === 'text/plain'; });
+    }
+
+    function makeTile(src, alt, idx) {
+        var tile = document.createElement('div');
+        tile.className = 'img-tile';
+        tile.dataset.idx = String(idx);
+        tile.setAttribute('draggable', 'true');
+        tile.onclick = function() { tile.classList.toggle('selected'); };
+        var im = document.createElement('img');
+        im.src = src;
+        im.alt = alt || '';
+        im.onerror = function() { tile.style.display = 'none'; };
+        var chk = document.createElement('div');
+        chk.className = 'img-check';
+        chk.textContent = '✓';
+        tile.appendChild(im);
+        tile.appendChild(chk);
+        return tile;
+    }
+
+    function attachImageDrag(grid) {
+        var dragging = null;
+        grid.addEventListener('dragstart', function(e) {
+            dragging = e.target.closest('.img-tile');
+            if (!dragging) return;
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(function() { if (dragging) dragging.classList.add('dragging'); }, 0);
+        });
+        grid.addEventListener('dragover', function(e) {
+            if (isUrlDrag(e)) return;
+            e.preventDefault();
+            var target = e.target.closest('.img-tile');
+            if (!target || target === dragging) return;
+            grid.querySelectorAll('.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
+            target.classList.add('drag-over');
+        });
+        grid.addEventListener('drop', function(e) {
+            var target = e.target.closest('.img-tile');
+            grid.querySelectorAll('.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
+            if (!dragging) return;
+            e.preventDefault();
+            if (!target || target === dragging) return;
+            var rect = target.getBoundingClientRect();
+            grid.insertBefore(dragging, e.clientX < rect.left + rect.width / 2 ? target : target.nextSibling);
+        });
+        grid.addEventListener('dragend', function() {
+            grid.querySelectorAll('.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
+            if (dragging) { dragging.classList.remove('dragging'); dragging = null; }
+        });
+    }
+
+    attachImageDrag(document.getElementById('cached-grid'));
+
+    /* ── Source image fetch + URL drop ── */
     var _sourceImages = [];
 
     function fetchSource() {
@@ -435,22 +540,8 @@
             .then(function(imgs) {
                 _sourceImages = imgs;
                 status.textContent = imgs.length + ' image' + (imgs.length === 1 ? '' : 's') + ' found';
-                imgs.forEach(function(img, i) {
-                    var tile = document.createElement('div');
-                    tile.className = 'img-tile';
-                    tile.dataset.idx = i;
-                    tile.onclick = function() { tile.classList.toggle('selected'); };
-                    var im = document.createElement('img');
-                    im.src = img.src;
-                    im.alt = img.alt || '';
-                    im.onerror = function() { tile.style.display = 'none'; };
-                    var chk = document.createElement('div');
-                    chk.className = 'img-check';
-                    chk.textContent = '✓';
-                    tile.appendChild(im);
-                    tile.appendChild(chk);
-                    grid.appendChild(tile);
-                });
+                imgs.forEach(function(img, i) { grid.appendChild(makeTile(img.src, img.alt, i)); });
+                if (!grid._dragAttached) { attachImageDrag(grid); grid._dragAttached = true; }
                 btn.disabled = false;
             })
             .catch(function(e) {
@@ -458,6 +549,101 @@
                 btn.disabled = false;
             });
     }
+
+    (function () {
+        var sec = document.getElementById('images-section');
+        sec.addEventListener('dragover', function(e) {
+            if (!isUrlDrag(e)) return;
+            e.preventDefault();
+            sec.classList.add('url-drag-over');
+        });
+        sec.addEventListener('dragleave', function(e) {
+            if (!sec.contains(e.relatedTarget)) sec.classList.remove('url-drag-over');
+        });
+        sec.addEventListener('drop', function(e) {
+            sec.classList.remove('url-drag-over');
+            if (!isUrlDrag(e)) return;
+            var raw = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '';
+            var url = raw.split('\n').map(function(l) { return l.trim(); })
+                         .find(function(l) { return /^https?:\/\//i.test(l) && !l.startsWith('#'); });
+            if (!url) return;
+            e.preventDefault();
+            if (_sourceImages.some(function(i) { return i.src === url; })) return;
+            var idx = _sourceImages.length;
+            _sourceImages.push({ src: url, alt: '', kind: 'dropped' });
+            var grid = document.getElementById('source-grid');
+            var tile = makeTile(url, '', idx);
+            tile.classList.add('selected');
+            grid.appendChild(tile);
+            if (!grid._dragAttached) { attachImageDrag(grid); grid._dragAttached = true; }
+        });
+    }());
+
+    /* ── Related links ── */
+    var _relatedLinks = /*[[${post.relatedLinks()}]]*/ [];
+
+    function renderRelatedLinks() {
+        var list  = document.getElementById('related-list');
+        var empty = document.getElementById('related-empty');
+        list.innerHTML = '';
+        _relatedLinks.forEach(function(link, i) {
+            var item = document.createElement('div');
+            item.className = 'related-item';
+            var a = document.createElement('a');
+            a.href = link.url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.className = 'related-item-link';
+            var lbl = link.title || link.url;
+            a.textContent = lbl.length > 30 ? lbl.slice(0, 30) + '…' : lbl;
+            a.title = link.url;
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'related-remove';
+            btn.textContent = '×';
+            btn.setAttribute('aria-label', 'Remove link');
+            (function(idx) {
+                btn.addEventListener('click', function() { _relatedLinks.splice(idx, 1); renderRelatedLinks(); });
+            }(i));
+            item.appendChild(a);
+            item.appendChild(btn);
+            list.appendChild(item);
+        });
+        empty.style.display = _relatedLinks.length ? 'none' : '';
+    }
+
+    (function() {
+        var rs = document.getElementById('related-section');
+        rs.addEventListener('dragover', function(e) {
+            var types = Array.from(e.dataTransfer.types);
+            if (!types.some(function(t) { return t === 'text/uri-list' || t === 'text/plain'; })) return;
+            e.preventDefault();
+            rs.classList.add('url-drag-over');
+        });
+        rs.addEventListener('dragleave', function(e) {
+            if (!rs.contains(e.relatedTarget)) rs.classList.remove('url-drag-over');
+        });
+        rs.addEventListener('drop', function(e) {
+            rs.classList.remove('url-drag-over');
+            var raw = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '';
+            var url = raw.split('\n').map(function(l) { return l.trim(); })
+                         .find(function(l) { return /^https?:\/\//i.test(l) && !l.startsWith('#'); });
+            if (!url) return;
+            e.preventDefault();
+            if (_relatedLinks.some(function(l) { return l.url === url; })) return;
+            _relatedLinks.push({ url: url, title: '' });
+            renderRelatedLinks();
+            fetch('/api/fetch-title?url=' + encodeURIComponent(url))
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    var entry = _relatedLinks.find(function(l) { return l.url === url; });
+                    if (entry && d.title) { entry.title = d.title; renderRelatedLinks(); }
+                })
+                .catch(function() {});
+        });
+    }());
+
+    renderRelatedLinks();
 
     /* ── Save ── */
     function saveEdit() {
@@ -467,9 +653,10 @@
         });
 
         var newImages = [];
+        var ri = 0;
         document.querySelectorAll('#source-grid .img-tile.selected').forEach(function(t) {
             var cand = _sourceImages[parseInt(t.dataset.idx, 10)];
-            if (cand) newImages.push({ src: cand.src, alt: cand.alt || '', kind: cand.kind, rankOrder: 0 });
+            if (cand) newImages.push({ src: cand.src, alt: cand.alt || '', kind: cand.kind, rankOrder: ri++ });
         });
 
         var body = {
@@ -477,7 +664,8 @@
             selectedText: document.getElementById('text-input').value,
             tags:         _tags.slice(),
             keepImageIds: keepIds,
-            newImages:    newImages
+            newImages:    newImages,
+            relatedLinks: _relatedLinks
         };
 
         var errEl = document.getElementById('save-error');

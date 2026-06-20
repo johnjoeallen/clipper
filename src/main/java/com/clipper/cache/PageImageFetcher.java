@@ -30,6 +30,44 @@ public class PageImageFetcher {
     }
 
     public List<ImageCandidate> fetchImages(String pageUrl) throws IOException {
+        Document doc = fetchDocument(pageUrl);
+
+        List<ImageCandidate> results = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+
+        Element ogImg = doc.selectFirst("meta[property=og:image]");
+        if (ogImg != null) {
+            String src = ogImg.attr("abs:content");
+            if (src.isBlank()) src = ogImg.attr("content");
+            if (isHttp(src) && seen.add(src)) {
+                results.add(new ImageCandidate(src, "", "og_image", null, null));
+            }
+        }
+
+        for (Element img : doc.select("img[src]")) {
+            if (results.size() >= MAX_RESULTS) break;
+            String src = img.absUrl("src");
+            if (src.isBlank() || !isHttp(src) || !seen.add(src)) continue;
+            String alt = img.attr("alt");
+            results.add(new ImageCandidate(src, alt, "page_image",
+                    parseIntOrNull(img.attr("width")),
+                    parseIntOrNull(img.attr("height"))));
+        }
+
+        return results;
+    }
+
+    public String fetchTitle(String pageUrl) throws IOException {
+        Document doc = fetchDocument(pageUrl);
+        String title = doc.title().trim();
+        if (title.isEmpty()) {
+            Element og = doc.selectFirst("meta[property=og:title]");
+            if (og != null) title = og.attr("content").trim();
+        }
+        return title;
+    }
+
+    private Document fetchDocument(String pageUrl) throws IOException {
         URI uri;
         try { uri = new URI(pageUrl).normalize(); }
         catch (URISyntaxException e) { throw new IOException("Invalid URL: " + e.getMessage()); }
@@ -67,31 +105,7 @@ public class PageImageFetcher {
             raw = in.readNBytes(MAX_HTML_BYTES);
         }
 
-        Document doc = Jsoup.parse(new String(raw, StandardCharsets.UTF_8), pageUrl);
-
-        List<ImageCandidate> results = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-
-        Element ogImg = doc.selectFirst("meta[property=og:image]");
-        if (ogImg != null) {
-            String src = ogImg.attr("abs:content");
-            if (src.isBlank()) src = ogImg.attr("content");
-            if (isHttp(src) && seen.add(src)) {
-                results.add(new ImageCandidate(src, "", "og_image", null, null));
-            }
-        }
-
-        for (Element img : doc.select("img[src]")) {
-            if (results.size() >= MAX_RESULTS) break;
-            String src = img.absUrl("src");
-            if (src.isBlank() || !isHttp(src) || !seen.add(src)) continue;
-            String alt = img.attr("alt");
-            results.add(new ImageCandidate(src, alt, "page_image",
-                    parseIntOrNull(img.attr("width")),
-                    parseIntOrNull(img.attr("height"))));
-        }
-
-        return results;
+        return Jsoup.parse(new String(raw, StandardCharsets.UTF_8), pageUrl);
     }
 
     private boolean isHttp(String url) {

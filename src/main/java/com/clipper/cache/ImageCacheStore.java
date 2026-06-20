@@ -1,6 +1,7 @@
 package com.clipper.cache;
 
 import com.clipper.model.CachedImage;
+import com.clipper.model.RelatedLink;
 import com.clipper.model.SavedPost;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,24 +67,28 @@ public class ImageCacheStore {
                   FOREIGN KEY (post_id) REFERENCES posts(id)
                 )""");
 
-        // Keep the Lucene index in sync with the table on every startup
+        jdbc.execute("ALTER TABLE posts ADD COLUMN IF NOT EXISTS related_links VARCHAR NOT NULL DEFAULT '[]'");
+        jdbc.execute("ALTER TABLE posts ADD COLUMN IF NOT EXISTS updated_at VARCHAR NOT NULL DEFAULT ''");
+
         searchIndex.reindexAll(findAllPosts());
     }
 
     // ── Write ─────────────────────────────────────────────────────────────────
 
     public void savePost(SavedPost post) {
-        String tagsJson;
+        String tagsJson, relatedLinksJson;
         try { tagsJson = mapper.writeValueAsString(post.tags()); }
         catch (Exception e) { tagsJson = "[]"; }
+        try { relatedLinksJson = mapper.writeValueAsString(post.relatedLinks()); }
+        catch (Exception e) { relatedLinksJson = "[]"; }
 
         jdbc.update("""
                 INSERT INTO posts
-                  (id, clip_id, url, title, og_title, selected_text, description, page_text, tags, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  (id, clip_id, url, title, og_title, selected_text, description, page_text, tags, created_at, updated_at, related_links)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 post.id(), post.clipId(), post.url(), post.title(), post.ogTitle(),
                 post.selectedText(), post.description(), post.pageText(),
-                tagsJson, post.createdAt());
+                tagsJson, post.createdAt(), post.createdAt(), relatedLinksJson);
 
         searchIndex.index(post);
     }
@@ -101,15 +106,19 @@ public class ImageCacheStore {
                 img.cachedAt(), img.cacheStatus(), img.cacheError());
     }
 
-    public void updatePost(String id, String title, String selectedText, List<String> tags) {
-        String tagsJson;
+    public void updatePost(String id, String title, String selectedText,
+                           List<String> tags, List<RelatedLink> relatedLinks) {
+        String tagsJson, relatedLinksJson;
         try { tagsJson = mapper.writeValueAsString(tags); }
         catch (Exception e) { tagsJson = "[]"; }
+        try { relatedLinksJson = mapper.writeValueAsString(relatedLinks); }
+        catch (Exception e) { relatedLinksJson = "[]"; }
 
+        String now = java.time.Instant.now().toString();
         jdbc.update("""
-                UPDATE posts SET title = ?, og_title = '', selected_text = ?, tags = ?
+                UPDATE posts SET title = ?, og_title = '', selected_text = ?, tags = ?, related_links = ?, updated_at = ?
                 WHERE id = ?""",
-                title, selectedText, tagsJson, id);
+                title, selectedText, tagsJson, relatedLinksJson, now, id);
 
         findPost(id).ifPresent(searchIndex::index);
     }
@@ -153,7 +162,7 @@ public class ImageCacheStore {
 
     public Optional<SavedPost> findPost(String id) {
         List<SavedPost> posts = jdbc.query("""
-                SELECT id, clip_id, url, title, og_title, selected_text, description, page_text, tags, created_at
+                SELECT id, clip_id, url, title, og_title, selected_text, description, page_text, tags, created_at, updated_at, related_links
                 FROM posts WHERE id = ?""", this::mapPost, id);
 
         if (posts.isEmpty()) return Optional.empty();
@@ -168,8 +177,8 @@ public class ImageCacheStore {
 
     public List<SavedPost> findAllPosts() {
         List<SavedPost> posts = jdbc.query("""
-                SELECT id, clip_id, url, title, og_title, selected_text, description, page_text, tags, created_at
-                FROM posts ORDER BY created_at DESC""", this::mapPost);
+                SELECT id, clip_id, url, title, og_title, selected_text, description, page_text, tags, created_at, updated_at, related_links
+                FROM posts ORDER BY CASE WHEN updated_at <> '' THEN updated_at ELSE created_at END DESC""", this::mapPost);
         return hydrateWithImages(posts);
     }
 
@@ -182,7 +191,7 @@ public class ImageCacheStore {
 
         String ph = ids.stream().map(s -> "?").collect(Collectors.joining(","));
         List<SavedPost> posts = jdbc.query(
-                "SELECT id, clip_id, url, title, og_title, selected_text, description, page_text, tags, created_at" +
+                "SELECT id, clip_id, url, title, og_title, selected_text, description, page_text, tags, created_at, updated_at, related_links" +
                 " FROM posts WHERE id IN (" + ph + ")",
                 this::mapPost, ids.toArray());
 
@@ -225,19 +234,24 @@ public class ImageCacheStore {
 
     private static SavedPost withImages(SavedPost p, List<CachedImage> images) {
         return new SavedPost(p.id(), p.clipId(), p.url(), p.title(), p.ogTitle(),
-                p.selectedText(), p.description(), p.pageText(), p.tags(), p.createdAt(), images);
+                p.selectedText(), p.description(), p.pageText(), p.tags(), p.createdAt(),
+                p.updatedAt(), images, p.relatedLinks());
     }
 
     private SavedPost mapPost(java.sql.ResultSet rs, int rn) throws java.sql.SQLException {
         List<String> tags;
         try { tags = mapper.readValue(rs.getString("tags"), new TypeReference<>() {}); }
         catch (Exception e) { tags = List.of(); }
+        List<RelatedLink> relatedLinks;
+        try { relatedLinks = mapper.readValue(nvl(rs.getString("related_links")), new TypeReference<>() {}); }
+        catch (Exception e) { relatedLinks = List.of(); }
         return new SavedPost(
                 rs.getString("id"), rs.getString("clip_id"),
                 rs.getString("url"), rs.getString("title"), rs.getString("og_title"),
                 rs.getString("selected_text"), rs.getString("description"),
                 nvl(rs.getString("page_text")), tags,
-                rs.getString("created_at"), List.of());
+                rs.getString("created_at"), nvl(rs.getString("updated_at")),
+                List.of(), relatedLinks);
     }
 
     private CachedImage mapImage(java.sql.ResultSet rs, int rn) throws java.sql.SQLException {

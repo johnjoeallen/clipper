@@ -245,7 +245,47 @@
             height: 100%;
             object-fit: cover;
             display: block;
+            pointer-events: none;
         }
+        .image-item.dragging  { opacity: 0.35; }
+        .image-item.drag-over { outline: 2px dashed var(--accent); outline-offset: -3px; }
+        .section.url-drag-over { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; }
+
+        /* ── Related links ── */
+        .related-list { display: flex; flex-direction: column; gap: 4px; }
+        .related-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        [data-theme="light"] .related-item { background: rgba(0,0,0,0.03); }
+        .related-item-link {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .related-item-link:hover { text-decoration: underline; }
+        .related-remove {
+            flex-shrink: 0;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 0 2px;
+            line-height: 1;
+            font-family: inherit;
+        }
+        .related-remove:hover { color: #e5484d; }
 
         /* ── Preview card ── */
         .preview-card {
@@ -376,13 +416,14 @@
         </section>
 
         <!-- Image grid -->
-        <section class="section">
+        <section class="section" id="image-section">
             <h2 class="section-label">Choose Image</h2>
 
             <div class="image-grid" th:if="${!clip.images().isEmpty()}">
                 <div class="image-item"
                      th:each="img : ${clip.images()}"
                      th:attr="data-src=${img.src()},data-alt=${img.alt()},data-kind=${img.kind()}"
+                     draggable="true"
                      onclick="selectImage(this)">
                     <img th:src="${img.src()}"
                          th:alt="${img.alt()}"
@@ -393,6 +434,13 @@
             </div>
 
             <p class="empty-notice" th:if="${clip.images().isEmpty()}">No images found on the source page.</p>
+        </section>
+
+        <!-- Related Links -->
+        <section class="section" id="related-section">
+            <h2 class="section-label">Related Links</h2>
+            <div class="related-list" id="related-list"></div>
+            <p class="empty-notice" id="related-empty">Drop a link here to add related resources</p>
         </section>
 
         <div class="step-actions">
@@ -480,7 +528,8 @@
                 return { src: img.src, alt: img.alt || '', kind: img.kind || '', rankOrder: i };
             }),
             selectedText: document.getElementById('selected-text').value,
-            tags: _tags
+            tags: _tags,
+            relatedLinks: _relatedLinks
         };
 
         document.querySelector('#step-2 .btn-primary').disabled = true;
@@ -563,6 +612,125 @@
         });
     }
 
+    /* ── Image drag-to-reorder + URL drop ── */
+    (function () {
+        var section = document.getElementById('image-section');
+        var grid    = section.querySelector('.image-grid');
+        var dragging = null;
+
+        function clearDragOver() {
+            if (grid) grid.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+            section.classList.remove('url-drag-over');
+        }
+
+        function syncOrder() {
+            _selectedImages = Array.from(grid.querySelectorAll('.image-item.selected')).map(function (el) {
+                return { src: el.dataset.src || '', alt: el.dataset.alt || '', kind: el.dataset.kind || '' };
+            });
+        }
+
+        function ensureGrid() {
+            if (grid) return grid;
+            grid = document.createElement('div');
+            grid.className = 'image-grid';
+            var notice = section.querySelector('.empty-notice');
+            if (notice) notice.style.display = 'none';
+            section.insertBefore(grid, section.querySelector('.step-actions'));
+            attachGridHandlers();
+            return grid;
+        }
+
+        function makeItem(url) {
+            if (Array.from((grid || section).querySelectorAll('.image-item'))
+                    .some(function (el) { return el.dataset.src === url; })) return null;
+            var item = document.createElement('div');
+            item.className = 'image-item';
+            item.dataset.src  = url;
+            item.dataset.alt  = '';
+            item.dataset.kind = 'dropped';
+            item.setAttribute('draggable', 'true');
+            item.addEventListener('click', function () { selectImage(item); });
+            var img = document.createElement('img');
+            img.src = url;
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;pointer-events:none';
+            img.addEventListener('load', function () {
+                checkImageSize(img);
+                if (item.style.display !== 'none') selectImage(item);
+            });
+            img.addEventListener('error', function () { item.remove(); });
+            item.appendChild(img);
+            return item;
+        }
+
+        function dropUrl(e) {
+            var raw = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '';
+            var url = raw.split('\n').map(function (l) { return l.trim(); })
+                         .find(function (l) { return /^https?:\/\//i.test(l) && !l.startsWith('#'); });
+            if (!url) return;
+            e.preventDefault();
+            var g = ensureGrid();
+            var item = makeItem(url);
+            if (item) g.appendChild(item);
+        }
+
+        function isUrlDrag(e) {
+            return !dragging && Array.from(e.dataTransfer.types)
+                .some(function (t) { return t === 'text/uri-list' || t === 'text/plain'; });
+        }
+
+        /* ── Section-level: URL drops (works even with no grid yet) ── */
+        section.addEventListener('dragover', function (e) {
+            if (!isUrlDrag(e)) return;
+            e.preventDefault();
+            section.classList.add('url-drag-over');
+        });
+        section.addEventListener('dragleave', function (e) {
+            if (!section.contains(e.relatedTarget)) clearDragOver();
+        });
+        section.addEventListener('drop', function (e) {
+            clearDragOver();
+            if (!isUrlDrag(e)) return;
+            dropUrl(e);
+        });
+
+        /* ── Grid-level: reorder items ── */
+        function attachGridHandlers() {
+            grid.addEventListener('dragstart', function (e) {
+                dragging = e.target.closest('.image-item');
+                if (!dragging) return;
+                e.dataTransfer.effectAllowed = 'move';
+                setTimeout(function () { if (dragging) dragging.classList.add('dragging'); }, 0);
+            });
+
+            grid.addEventListener('dragover', function (e) {
+                if (isUrlDrag(e)) return; // handled by section
+                e.preventDefault();
+                var target = e.target.closest('.image-item');
+                if (!target || target === dragging) return;
+                grid.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+                target.classList.add('drag-over');
+            });
+
+            grid.addEventListener('drop', function (e) {
+                var target = e.target.closest('.image-item');
+                grid.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+                if (!dragging) return; // URL drop: bubbles up to section handler
+                e.preventDefault();
+                if (!target || target === dragging) return;
+                var rect = target.getBoundingClientRect();
+                grid.insertBefore(dragging, e.clientX < rect.left + rect.width / 2 ? target : target.nextSibling);
+                syncOrder();
+            });
+
+            grid.addEventListener('dragend', function () {
+                clearDragOver();
+                if (dragging) { dragging.classList.remove('dragging'); dragging = null; }
+            });
+        }
+
+        if (grid) attachGridHandlers();
+    }());
+
     /* ── Tag input ── */
     var _tags = /*[[${clip.keywords()}]]*/ [];
 
@@ -615,6 +783,78 @@
     tagInput.addEventListener('blur', function () {
         if (this.value.trim()) { addTag(this.value); this.value = ''; }
     });
+
+    /* ── Related links ── */
+    var _relatedLinks = /*[[${clip.relatedLinks()}]]*/ [];
+
+    function renderRelatedLinks() {
+        var list  = document.getElementById('related-list');
+        var empty = document.getElementById('related-empty');
+        list.innerHTML = '';
+        _relatedLinks.forEach(function (link, i) {
+            var item = document.createElement('div');
+            item.className = 'related-item';
+
+            var a = document.createElement('a');
+            a.href = link.url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.className = 'related-item-link';
+            var lbl = link.title || link.url;
+            a.textContent = lbl.length > 30 ? lbl.slice(0, 30) + '…' : lbl;
+            a.title = link.url;
+
+            var btn = document.createElement('button');
+            btn.className = 'related-remove';
+            btn.textContent = '×';
+            btn.setAttribute('aria-label', 'Remove link');
+            (function (idx) {
+                btn.addEventListener('click', function () {
+                    _relatedLinks.splice(idx, 1);
+                    renderRelatedLinks();
+                });
+            }(i));
+
+            item.appendChild(a);
+            item.appendChild(btn);
+            list.appendChild(item);
+        });
+        empty.style.display = _relatedLinks.length ? 'none' : '';
+    }
+
+    (function () {
+        var rs = document.getElementById('related-section');
+
+        rs.addEventListener('dragover', function (e) {
+            var types = Array.from(e.dataTransfer.types);
+            if (!types.some(function (t) { return t === 'text/uri-list' || t === 'text/plain'; })) return;
+            e.preventDefault();
+            rs.classList.add('url-drag-over');
+        });
+        rs.addEventListener('dragleave', function (e) {
+            if (!rs.contains(e.relatedTarget)) rs.classList.remove('url-drag-over');
+        });
+        rs.addEventListener('drop', function (e) {
+            rs.classList.remove('url-drag-over');
+            var raw = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '';
+            var url = raw.split('\n').map(function (l) { return l.trim(); })
+                         .find(function (l) { return /^https?:\/\//i.test(l) && !l.startsWith('#'); });
+            if (!url) return;
+            e.preventDefault();
+            if (_relatedLinks.some(function (l) { return l.url === url; })) return;
+            _relatedLinks.push({ url: url, title: '' });
+            renderRelatedLinks();
+            fetch('/api/fetch-title?url=' + encodeURIComponent(url))
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    var entry = _relatedLinks.find(function (l) { return l.url === url; });
+                    if (entry && d.title) { entry.title = d.title; renderRelatedLinks(); }
+                })
+                .catch(function () {});
+        });
+    }());
+
+    renderRelatedLinks();
 </script>
 </body>
 </html>

@@ -122,8 +122,25 @@ public class PostController {
             cached.forEach(store::saveImage);
         }
 
-        store.updatePost(id, title, selectedText, tags);
+        List<com.clipper.model.RelatedLink> relatedLinks = sanitizeRelatedLinks(req.relatedLinks());
+        store.updatePost(id, title, selectedText, tags, relatedLinks);
         return ResponseEntity.ok(Map.of("postUrl", "/post/" + id));
+    }
+
+    // ── Fetch page title (AJAX, used by related-links drop) ──────────────────
+
+    @GetMapping(value = "/api/fetch-title", produces = "application/json")
+    @ResponseBody
+    public ResponseEntity<?> fetchPageTitle(@RequestParam String url) {
+        if (url == null || url.isBlank() || url.length() > 2048
+                || (!url.startsWith("http://") && !url.startsWith("https://"))) {
+            return ResponseEntity.badRequest().body(Map.of("error", "invalid url"));
+        }
+        try {
+            return ResponseEntity.ok(Map.of("title", pageFetcher.fetchTitle(url)));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("title", ""));
+        }
     }
 
     // ── Delete (AJAX) ─────────────────────────────────────────────────────────
@@ -138,4 +155,23 @@ public class PostController {
     }
 
     private static String nvl(String s) { return s != null ? s : ""; }
+
+    private static List<com.clipper.model.RelatedLink> sanitizeRelatedLinks(
+            List<com.clipper.model.RelatedLink> raw) {
+        if (raw == null) return List.of();
+        var seen = new java.util.LinkedHashMap<String, com.clipper.model.RelatedLink>();
+        for (var l : raw) {
+            if (l == null || l.url() == null || l.url().isBlank()) continue;
+            String u = l.url().strip();
+            if (u.length() > 2048) continue;
+            if (!u.startsWith("http://") && !u.startsWith("https://")) continue;
+            if (!seen.containsKey(u)) {
+                String t = l.title() != null ? l.title().strip() : "";
+                if (t.length() > 200) t = t.substring(0, 200);
+                seen.put(u, new com.clipper.model.RelatedLink(u, t));
+            }
+            if (seen.size() >= 20) break;
+        }
+        return List.copyOf(seen.values());
+    }
 }

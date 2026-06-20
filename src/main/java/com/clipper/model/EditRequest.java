@@ -9,5 +9,6 @@ public record EditRequest(
         @JsonProperty("selectedText")  String selectedText,
         @JsonProperty("tags")          List<String> tags,
         @JsonProperty("keepImageIds")  List<String> keepImageIds,
-        @JsonProperty("newImages")     List<SaveRequest.SelectedImage> newImages
+        @JsonProperty("newImages")     List<SaveRequest.SelectedImage> newImages,
+        @JsonProperty("relatedLinks")  List<RelatedLink> relatedLinks
 ) {}

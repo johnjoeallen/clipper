@@ -127,7 +127,7 @@ public class ClipController {
         ClipPayload payload = new ClipPayload(
                 url, safeTitle, safeText, safeDesc, safeCu,
                 safeOgTitle, "", ogImageStr,
-                images, keywords, "");
+                images, keywords, "", List.of());
         ClipEntry entry = clipStore.save(payload);
         return "redirect:/clip/" + entry.id();
     }
@@ -182,11 +182,15 @@ public class ClipController {
                         .limit(50)
                         .toList());
 
+        List<com.clipper.model.RelatedLink> relatedLinks = sanitizeRelatedLinks(req.relatedLinks());
+
         ClipPayload p = entry.payload();
         String selectedText = req.selectedText() != null ? req.selectedText() : p.selectedText();
 
+        String now = Instant.now().toString();
         SavedPost post = new SavedPost(postId, id, p.url(), p.title(), p.ogTitle(),
-                selectedText, p.description(), nvl(p.pageText()), tags, Instant.now().toString(), cached);
+                selectedText, p.description(), nvl(p.pageText()), tags, now, now,
+                cached, relatedLinks);
 
         imageCacheStore.savePost(post);
         cached.forEach(imageCacheStore::saveImage);
@@ -230,10 +234,31 @@ public class ClipController {
         String pageText = nvl(p.pageText());
         if (pageText.length() > MAX_PAGE_TEXT) pageText = pageText.substring(0, MAX_PAGE_TEXT);
 
+        List<com.clipper.model.RelatedLink> relatedLinks = sanitizeRelatedLinks(p.relatedLinks());
+
         return new ClipPayload(p.url(), nvl(p.title()), nvl(p.selectedText()),
                 nvl(p.description()), nvl(p.canonicalUrl()), nvl(p.ogTitle()),
-                nvl(p.ogDescription()), nvl(p.ogImage()), images, keywords, pageText);
+                nvl(p.ogDescription()), nvl(p.ogImage()), images, keywords, pageText, relatedLinks);
     }
 
     private static String nvl(String s) { return s != null ? s : ""; }
+
+    private static List<com.clipper.model.RelatedLink> sanitizeRelatedLinks(
+            List<com.clipper.model.RelatedLink> raw) {
+        if (raw == null) return List.of();
+        var seen = new java.util.LinkedHashMap<String, com.clipper.model.RelatedLink>();
+        for (var l : raw) {
+            if (l == null || l.url() == null || l.url().isBlank()) continue;
+            String u = l.url().strip();
+            if (u.length() > MAX_URL_LEN) continue;
+            if (!u.startsWith("http://") && !u.startsWith("https://")) continue;
+            if (!seen.containsKey(u)) {
+                String t = l.title() != null ? l.title().strip() : "";
+                if (t.length() > 200) t = t.substring(0, 200);
+                seen.put(u, new com.clipper.model.RelatedLink(u, t));
+            }
+            if (seen.size() >= 20) break;
+        }
+        return List.copyOf(seen.values());
+    }
 }

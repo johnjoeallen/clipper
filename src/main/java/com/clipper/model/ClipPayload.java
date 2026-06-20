@@ -15,5 +15,6 @@ public record ClipPayload(
         @JsonProperty("ogImage")       String ogImage,
         @JsonProperty("images")        List<ImageCandidate> images,
         @JsonProperty("keywords")      List<String> keywords,
-        @JsonProperty("pageText")      String pageText
+        @JsonProperty("pageText")      String pageText,
+        @JsonProperty("relatedLinks")  List<RelatedLink> relatedLinks
 ) {}

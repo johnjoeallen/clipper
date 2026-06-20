@@ -7,7 +7,8 @@ import java.util.List;
 public record SaveRequest(
         @JsonProperty("selectedImages") List<SelectedImage> selectedImages,
         @JsonProperty("selectedText")   String selectedText,
-        @JsonProperty("tags")           List<String> tags
+        @JsonProperty("tags")           List<String> tags,
+        @JsonProperty("relatedLinks")   List<RelatedLink> relatedLinks
 ) {
     public record SelectedImage(
             @JsonProperty("src")       String src,
