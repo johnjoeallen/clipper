@@ -1,21 +1,30 @@
 # Clipper
 
-A browser bookmarklet and Spring Boot app for saving web page clips. Click the bookmarklet on any page and Clipper captures the title, URL, Open Graph metadata, tags, selected text, page body text, and candidate images directly from the live DOM — no server-side scraping required. A two-step popup composer lets you review and curate the clip before submitting. When you save, Clipper downloads and caches the selected images locally so saved cards render from your own copy — independent of the original site.
+A browser bookmarklet and Spring Boot app for saving web page clips. Click the bookmarklet on any page and Clipper captures the title, URL, Open Graph metadata, tags, selected text, page body text, candidate images, and related links directly from the live DOM — no server-side scraping required. A two-step popup composer lets you review and curate the clip before submitting. When you save, Clipper downloads and caches the selected images locally so saved cards render from your own copy — independent of the original site.
 
 ---
 
 ## How it works
 
 1. You click the **Clip it** bookmarklet on any page.
-2. The bookmarklet injects `clipper.js` from the Clipper server into the page.
-3. `clipper.js` collects metadata, tags, images, and body text from the live DOM and POSTs them to `POST /clip`.
+2. The bookmarklet opens a popup immediately (preserving the user-gesture token so popup blockers cannot interfere), then injects `clipper.js` from the Clipper server into the source page.
+3. `clipper.js` collects metadata, tags, images, related links, and body text from the live DOM and POSTs them to `POST /clip`.
 4. The server sanitises the payload, stores it in memory with a 1-hour TTL, and returns a `clipId` and a `composeUrl`.
-5. `clipper.js` opens a popup pointing at `GET /clip/{clipId}`.
+5. `clipper.js` navigates the already-open popup to `GET /clip/{clipId}`.
 6. The composer popup opens in two steps:
-   - **Step 1 — Edit:** Review and edit the captured text, manage tags, and select one or more images from the candidate grid.
-   - **Step 2 — Preview:** See how the card will look, with all selected images displayed together, then submit.
-7. On submit, the server caches each selected image locally, then saves the post to H2 (including page body text, which is indexed in Lucene for full-text search).
+   - **Step 1 — Edit:** Review and edit the captured text, manage tags, reorder and select images, and manage related links.
+   - **Step 2 — Preview:** See how the card will look, then submit.
+7. On submit, the server caches each selected image locally, then saves the post to H2 (including page body text, indexed in Lucene for full-text search).
 8. The saved post page (`GET /post/{id}`) renders entirely from cached local images — no dependency on the original site.
+
+### CSP-restricted sites (YouTube, SharePoint, etc.)
+
+Sites that block script injection via Content Security Policy (CSP) prevent `clipper.js` from loading. The bookmarklet handles this gracefully:
+
+- The popup is opened **synchronously** inside the user-gesture handler, before any async work, so the popup cannot be blocked.
+- The popup initially loads `GET /clip/quick` with URL, title, selected text, and any metadata already captured inline by the bookmarklet (Twitter card image, OG tags, keywords, canonical URL).
+- If `clipper.js` loads successfully, it POSTs a richer payload and navigates the existing popup to the full composer — the window is reused by name (`bb_clip`) so no second popup appears.
+- If the script is blocked by CSP, the popup stays on the minimal quick-clip page and the user can continue from there.
 
 ---
 
@@ -31,11 +40,12 @@ The bookmarklet collects the following fields from every page:
 | `title` | `document.title` |
 | `selectedText` | Active text selection at click time |
 | `pageText` | Visible body text (nav/header/footer/scripts stripped, capped at 100 KB) |
-| `description` | `<meta name="description">` |
+| `description` | `<meta name="description">`, then `og:description` |
 | `canonicalUrl` | `<link rel="canonical">` |
 | `ogTitle` | `<meta property="og:title">` |
 | `ogDescription` | `<meta property="og:description">` |
 | `ogImage` | `<meta property="og:image">` |
+| `relatedLinks` | `<link rel="related">`, `<a rel="related">`, JSON-LD `relatedLink` |
 
 All text extraction runs client-side in the browser, so it works behind logins and paywalls without any extra server-side request.
 
@@ -49,9 +59,9 @@ The home page has a search bar that queries all saved posts via a Lucene index. 
 - Tags
 - Page body text (captured at clip time)
 
-Search results are returned in relevance order. Clearing the query (or submitting an empty one) returns all posts in reverse-chronological order.
+Search results are returned in relevance order. Clearing the query (or submitting an empty one) returns all posts sorted by last-updated date.
 
-### Tag extraction
+### Tag extraction and filtering
 
 Tags are aggregated from multiple sources and deduplicated (lowercased, max 100 chars each, up to 50 total):
 
@@ -59,29 +69,54 @@ Tags are aggregated from multiple sources and deduplicated (lowercased, max 100 
 - `<meta property="article:section">` and repeating `article:tag`
 - `<a rel~="tag">` links — covers WordPress, Baeldung, and most CMS-driven sites
 - Breadcrumb navigation (`nav[aria-label*="breadcrumb"]`, `.breadcrumb a`, `#wayfinding-breadcrumbs_feature_div a`, and Schema.org microdata) — covers Amazon and most e-commerce / news sites that skip meta keywords
-- Schema.org JSON-LD blocks: `keywords`, `articleSection`, and `about[].name`
+- Schema.org JSON-LD blocks: `keywords`, `articleSection`, `about[].name`, and `genre`
 
-### Image collection and filtering
+**Generic tag filtering** runs server-side on every save and edit. Tags are dropped if they:
+- Are in Lucene's English stop word list (`the`, `a`, `in`, …), or
+- Appear in `generic-tags.txt` (common web-UI phrases, vague metadata words, platform-generic terms like `upload`, `sharing`, `free streaming`), or
+- Contain more than 5 words.
 
-Images are collected from the OG image tag (highest priority) and all `<img src>` elements on the page. Images are filtered to remove obvious icons and tracking pixels:
+Kept and dropped tags are logged at INFO level.
 
-- At collection time in the bookmarklet: images where **both** known dimensions are below **300 px** are dropped before the payload is sent to the server.
-- After rendering in the composer grid: the `onload` handler checks true natural dimensions and hides any image where **both** dimensions are below **300 px**.
+### Image collection
+
+Images are collected from multiple sources, in priority order:
+
+1. `<meta name="twitter:image">` / `twitter:image:src` — most reliable thumbnail on video sites (YouTube, Twitter/X)
+2. All `<meta property="og:image">` elements
+3. JSON-LD `thumbnailUrl` arrays
+4. All `<img src>` elements on the page
+
+Images are filtered to remove icons and tracking pixels:
+
+- At collection time: images where **both** known dimensions are below 300 px are dropped before the payload is sent.
+- After rendering in the composer grid: the `onload` handler checks true natural dimensions and hides any image where both dimensions are below 300 px.
 - Broken images (CORS errors, 404s) are hidden via `onerror`.
-- Up to 20 images reach the server; the grid shows whichever pass the size filter.
+- Up to 20 images reach the server.
+
+**Default selection:** when multiple images are present, the second image is pre-selected (the first is often a generic site logo on YouTube and Amazon).
+
+### Related links
+
+Related links are collected automatically from:
+- `<link rel="related">` elements in `<head>` (title from the `title` attribute)
+- `<a rel="related">` anchors in the page body (title from link text)
+- JSON-LD `relatedLink` field (string or array)
+
+Up to 10 links are collected automatically. In the composer and edit pages, additional links can be added by **dropping any URL** onto the Related Links section. When a URL is dropped, the server fetches its page title via `GET /api/fetch-title` and updates the label. Titles are displayed truncated to 30 characters. Related links are saved with the post and displayed on the post view page.
 
 ### Two-step composer
 
 **Step 1** presents all captured data for review:
 - Editable textarea for the selected text
-- Meta description (if present)
 - Tag chips with add/remove — pre-populated from the page's tag sources
-- Image grid for multi-select — click to toggle, selected images show a check badge
+- Image grid with drag-to-reorder and click-to-toggle-select; drop a URL onto the image section to add a new candidate
+- Related links list with add-by-drop and per-link remove
 
 **Step 2** shows the preview card:
-- All selected images displayed in a responsive grid (no pagination)
+- All selected images in a responsive grid
 - Title, body text, and source link
-- Back button to return and adjust; Submit button to save the clip
+- Back button to return and adjust; Submit button to save
 
 ### Image caching
 
@@ -96,14 +131,14 @@ When the user submits in Step 2, the server caches all selected images before sa
 - The downloaded bytes are decoded with `ImageIO` to confirm they are a valid image.
 
 **Storage:**
-- Files are written atomically: the server downloads to a temp file, validates, then moves into place.
-- Filenames are derived from the SHA-256 of the downloaded bytes (e.g. `a3f8...c2.jpg`); the original filename is not used.
+- Files are written atomically: download to temp file, validate, then move into place.
+- Filenames are derived from the SHA-256 of the downloaded bytes; the original filename is not used.
 - Duplicate images (same bytes, different URLs) are deduplicated by checksum — only one file is stored.
 - A thumbnail is generated alongside each original (default max dimension: 400 px).
-- Image metadata (original URL, local path, thumbnail path, dimensions, content type, checksum, cache status) is stored in H2.
+- Image metadata is stored in H2.
 
 **On failure:**
-- If any selected image cannot be cached, the save is aborted and the composer displays a per-image error. The user can go back, deselect the failing image, and retry.
+- If any selected image cannot be cached, the save is aborted and the composer displays a per-image error.
 
 **File layout:**
 
@@ -112,31 +147,39 @@ When the user submits in Step 2, the server caches all selected images before sa
   clipperdb.mv.db        # H2 database (posts + image metadata)
   search-index/          # Lucene full-text index
   images/
-    originals/          # Full-size cached images (<sha256>.<ext>)
-    thumbnails/         # Resized copies (<sha256>.<ext>)
+    originals/           # Full-size cached images (<sha256>.<ext>)
+    thumbnails/          # Resized copies (<sha256>.<ext>)
 ```
 
 ### Home page
 
-`GET /` shows a card grid of all saved posts, most recent first. Each card shows the primary image (thumbnail preferred), title, excerpt, and tags. Clicking a card opens the post view; the ✎ icon opens the edit page directly, and the 🗑 icon deletes the post after a confirmation prompt. A search bar at the top filters cards via full-text search.
+`GET /` shows a card grid of all saved posts, sorted by **last-updated date** (editing a post moves it to the top). Each card shows the primary image (thumbnail preferred), title, excerpt, and tags.
+
+The column layout is user-selectable with **1 / 2 / 3** buttons in the topbar; the choice is persisted in `localStorage`. In 1-column mode cards are 20% wider than a 2-column card; in 3-column mode cards are narrower.
+
+Clicking a card opens the post view; the ✎ icon opens the edit page; the 🗑 icon deletes after confirmation. A search bar filters cards via full-text search. **Clicking a tag** on any card or post page runs a search for that tag, showing all posts that share it.
+
+The topbar also has a **Copy bookmarklet** button that copies a self-contained bookmarklet to the clipboard. The bookmarklet is generated dynamically from `window.location.origin` so it works on any host without manual configuration.
 
 ### Saved post view
 
 `GET /post/{id}` renders the saved post using only cached local images. It shows:
 - Page title with an ↗ link icon to the original page
-- Selected cached images (only those marked as selected)
+- Selected cached images
 - Selected / edited body text
+- Related links (if any)
 - Tags
-- Home, Edit, and Delete buttons in the header (Delete asks for confirmation)
 
 ### Editing
 
 `GET /post/{id}/edit` opens an edit form. You can:
 - Update the title, body text, and tags
-- Toggle which cached images are shown (click to select/deselect)
-- Fetch fresh image candidates from the original source URL with **Fetch from source** — the server re-fetches and Jsoup-parses the page, returning image candidates you can select to cache and add
+- Toggle which cached images are shown; drag to reorder them
+- Drop a URL onto the image section to fetch and cache a new image
+- Add or remove related links (drop a URL to add; title is fetched automatically)
+- Fetch fresh image candidates from the original source URL with **Fetch from source**
 
-Edits save via JSON (`POST /post/{id}/edit`) and re-index the post in Lucene.
+Edits save via JSON (`POST /post/{id}/edit`), update `updated_at`, and re-index the post in Lucene.
 
 ### Theme
 
@@ -156,14 +199,14 @@ All pages support dark and light themes with a toggle button in the header. The 
 | Full-text search | Apache Lucene with `EnglishAnalyzer` (Porter stemmer) |
 | Image cache | Local filesystem (`~/.clipper/images/`) |
 | Thumbnails | Thumbnailator |
-| HTML parsing | Jsoup (source-image fetch on edit page) |
+| HTML parsing | Jsoup (source-image fetch + page-title fetch) |
 | Tests | JUnit 5 + MockMvc + Mockito |
 
 ---
 
 ## Database
 
-Clipper uses a file-based H2 database at `~/.clipper/clipperdb.mv.db` (configurable via `clipper.data-dir`). The schema is created automatically on first run via `CREATE TABLE IF NOT EXISTS`.
+Clipper uses a file-based H2 database at `~/.clipper/clipperdb.mv.db`. The schema is created automatically on first run via `CREATE TABLE IF NOT EXISTS`; new columns are added with `ALTER TABLE … ADD COLUMN IF NOT EXISTS` so existing databases upgrade transparently.
 
 ### Tables
 
@@ -181,6 +224,8 @@ Clipper uses a file-based H2 database at `~/.clipper/clipperdb.mv.db` (configura
 | `page_text` | CLOB | Visible body text captured by the bookmarklet (up to 100 KB) |
 | `tags` | VARCHAR | JSON array of tag strings |
 | `created_at` | VARCHAR | ISO-8601 instant |
+| `updated_at` | VARCHAR | ISO-8601 instant; set on save, updated on every edit |
+| `related_links` | VARCHAR | JSON array of `{url, title}` objects |
 
 **`cached_images`** — one row per candidate image per post.
 
@@ -191,7 +236,7 @@ Clipper uses a file-based H2 database at `~/.clipper/clipperdb.mv.db` (configura
 | `original_url` | VARCHAR | Source URL |
 | `local_path` | VARCHAR | Relative path under `images/originals/` |
 | `thumbnail_path` | VARCHAR | Relative path under `images/thumbnails/` |
-| `sha256` | VARCHAR | Hex SHA-256 of file bytes (used for deduplication) |
+| `sha256` | VARCHAR | Hex SHA-256 of file bytes (deduplication key) |
 | `cache_status` | VARCHAR | `cached` · `failed` · `rejected` |
 | `selected` | INTEGER | `1` = shown on the post, `0` = hidden |
 | `rank_order` | INTEGER | Display order |
@@ -199,22 +244,13 @@ Clipper uses a file-based H2 database at `~/.clipper/clipperdb.mv.db` (configura
 
 ### Full-text search (Lucene)
 
-A Lucene index lives alongside the database at `~/.clipper/search-index/`, with one document per post covering these fields:
+A Lucene index lives alongside the database at `~/.clipper/search-index/`, with one document per post covering `title`, `og_title`, `selected_text`, `description`, `tags_text`, and `page_text`. Each field is analyzed with `EnglishAnalyzer` (Porter stemming + stopwords).
 
-- `title`, `og_title`, `selected_text`, `description`, `tags_text`, `page_text`
-
-Each field is analyzed with Lucene's `EnglishAnalyzer`, which stems words to their root form (Porter stemming) and strips common stopwords — so a search for "running" also matches "run", "runs", and "runner".
-
-The index is kept in sync with the `posts` table:
-- Rebuilt from scratch on every startup (`IndexWriter.deleteAll()` + re-add from all DB rows), so it can never drift out of sync with the database.
-- A document is upserted (`updateDocument`, keyed by post ID) when a post is saved or edited.
-- The document is deleted when a post is deleted.
-
-Each query word is matched as a `BooleanQuery` combining a prefix query (raw term) and a term query (stemmed form) across every field, OR'd together; per-word queries are then AND'd, so all words must match somewhere. Results are returned in Lucene's default BM25 relevance order.
+The index is rebuilt from the database on every startup, upserted on save/edit, and deleted on post deletion. Queries AND all words together (each word matched as raw prefix OR stemmed term across all fields) and return results in BM25 relevance order.
 
 ### Connection pool
 
-Unlike SQLite, H2 supports concurrent writers, so HikariCP is configured with `maximum-pool-size=5`.
+H2 supports concurrent writers; HikariCP is configured with `maximum-pool-size=5`.
 
 ---
 
@@ -230,7 +266,9 @@ The server starts on `http://localhost:8080`.
 
 ## Installing the bookmarklet
 
-### Development (localhost)
+The easiest way is to open the Clipper home page and click **Copy bookmarklet**, then create a new browser bookmark and paste the copied code as the URL.
+
+### Manual (development)
 
 Create a browser bookmark with this URL:
 
@@ -238,17 +276,15 @@ Create a browser bookmark with this URL:
 javascript:(()=>{const s=document.createElement('script');s.src='http://localhost:8080/clipper.js';document.body.appendChild(s);})();
 ```
 
-Name it **Clip it** and add it to your bookmarks bar.
-
 ### Production
 
-Replace `http://localhost:8080` with your deployed app's base URL. The bookmarklet derives the app origin from its own `<script src>`, so no other changes are needed.
+Replace `http://localhost:8080` with your deployed app's base URL, or use the **Copy bookmarklet** button on the home page — it generates the bookmarklet from `window.location.origin` automatically.
 
 ---
 
 ## Configuration
 
-All settings are in `application.properties`. The defaults are shown below.
+All settings are in `application.properties`.
 
 ```properties
 # Directory for the H2 database, Lucene index, and image cache
@@ -272,7 +308,7 @@ clipper.image.allow-private-addresses=false
 mvn test
 ```
 
-Tests use JUnit 5, MockMvc, and Mockito and do not require a running server. Integration tests write to `/tmp/clipper-test`. `ImageCacheServiceTest` starts an embedded JDK HTTP server to exercise the full download and caching path.
+Tests use JUnit 5, MockMvc, and Mockito and do not require a running server. Integration tests write to `/tmp/clipper-test`.
 
 ---
 
@@ -280,7 +316,7 @@ Tests use JUnit 5, MockMvc, and Mockito and do not require a running server. Int
 
 ### `POST /clip`
 
-Accepts a JSON payload and returns a compose URL.
+Accepts a JSON payload from `clipper.js` and returns a compose URL.
 
 **Request body**
 
@@ -289,7 +325,7 @@ Accepts a JSON payload and returns a compose URL.
   "url": "https://example.com/article",
   "title": "Article title",
   "selectedText": "Text the user highlighted",
-  "pageText": "Full visible body text of the page (up to 100 KB)",
+  "pageText": "Full visible body text (up to 100 KB)",
   "description": "Meta description",
   "canonicalUrl": "https://example.com/article",
   "ogTitle": "OG title",
@@ -298,18 +334,22 @@ Accepts a JSON payload and returns a compose URL.
   "images": [
     { "src": "https://example.com/image.jpg", "alt": "", "kind": "og_image", "width": null, "height": null }
   ],
-  "keywords": ["java", "spring"]
+  "keywords": ["java", "spring"],
+  "relatedLinks": [
+    { "url": "https://example.com/see-also", "title": "See also" }
+  ]
 }
 ```
 
 **Response**
 
 ```json
-{
-  "clipId": "550e8400-e29b-41d4-a716-446655440000",
-  "composeUrl": "/clip/550e8400-e29b-41d4-a716-446655440000"
-}
+{ "clipId": "550e8400-...", "composeUrl": "/clip/550e8400-..." }
 ```
+
+### `GET /clip/quick`
+
+CSP fallback endpoint. Accepts minimal data via query parameters (`url`, `title`, `text`, `ogTitle`, `desc`, `kw`, `cu`, `img` (repeatable)), creates an in-memory clip, and redirects to the compose page. Used when `clipper.js` cannot load due to CSP restrictions.
 
 ### `GET /clip/{id}`
 
@@ -327,7 +367,10 @@ Caches the selected images and saves the post to H2. Returns 422 if any image fa
     { "src": "https://example.com/image.jpg", "alt": "A photo", "kind": "og_image", "rankOrder": 0 }
   ],
   "selectedText": "Edited body text",
-  "tags": ["java", "spring"]
+  "tags": ["java", "spring"],
+  "relatedLinks": [
+    { "url": "https://example.com/see-also", "title": "See also" }
+  ]
 }
 ```
 
@@ -337,15 +380,9 @@ Caches the selected images and saves the post to H2. Returns 422 if any image fa
 { "postId": "661f9511-...", "postUrl": "/post/661f9511-..." }
 ```
 
-**Error (422)**
-
-```json
-{ "error": "Image caching failed", "details": ["https://example.com/image.jpg: HTTP 403"] }
-```
-
 ### `GET /`
 
-Home page. Accepts an optional `?q=` query parameter for full-text search.
+Home page. Accepts an optional `?q=` parameter for full-text search. Results are sorted by `updated_at` descending (falls back to `created_at` for posts that have never been edited).
 
 ### `GET /post/{id}`
 
@@ -357,7 +394,7 @@ Opens the edit form for the post.
 
 ### `POST /post/{id}/edit`
 
-Saves edits to a post. Accepts and returns JSON.
+Saves edits to a post. Updates `updated_at`. Re-indexes in Lucene.
 
 **Request body**
 
@@ -369,6 +406,9 @@ Saves edits to a post. Accepts and returns JSON.
   "keepImageIds": ["img-uuid-1"],
   "newImages": [
     { "src": "https://example.com/new.jpg", "alt": "", "kind": "page_image", "rankOrder": 0 }
+  ],
+  "relatedLinks": [
+    { "url": "https://example.com/see-also", "title": "See also" }
   ]
 }
 ```
@@ -384,7 +424,7 @@ Saves edits to a post. Accepts and returns JSON.
 
 ### `POST /post/{id}/delete`
 
-Deletes a post, its cached image rows, and its Lucene document. Underlying image files are deleted from disk too, unless their checksum is still referenced by another post. Returns 404 if the post doesn't exist.
+Deletes a post, its cached image rows, and its Lucene document. Underlying image files are deleted unless their checksum is still referenced by another post.
 
 **Response**
 
@@ -394,18 +434,21 @@ Deletes a post, its cached image rows, and its Lucene document. Underlying image
 
 ### `GET /post/{id}/source-images`
 
-Fetches and Jsoup-parses the post's original URL server-side, returning image candidates. Used by the edit page's **Fetch from source** button.
+Fetches and Jsoup-parses the post's original URL server-side, returning image candidates. Used by the edit page's **Fetch from source** button. Returns 502 if the source page is unreachable.
+
+### `GET /api/fetch-title`
+
+Fetches a URL server-side and returns its `<title>` (falling back to `og:title`). Used by the related-links drop zone to label dropped URLs.
+
+**Query parameter:** `url` (required, must be http/https)
 
 **Response**
 
 ```json
-[
-  { "src": "https://example.com/hero.jpg", "alt": "Hero image", "kind": "og_image", "width": null, "height": null },
-  { "src": "https://example.com/photo.jpg", "alt": "A photo", "kind": "page_image", "width": 800, "height": 600 }
-]
+{ "title": "Example Domain" }
 ```
 
-Returns 502 if the source page is unreachable.
+Returns `{"title": ""}` on fetch failure rather than an error status, so the client can fall back to displaying the URL.
 
 ### `GET /images/originals/{filename}`
 ### `GET /images/thumbnails/{filename}`
@@ -418,6 +461,5 @@ Serves cached image files. Responses include `Cache-Control: public, max-age=315
 
 - **Lazy-loaded content** — the bookmarklet collects what is present in the live DOM at click time. Content that loads later (infinite scroll, deferred images) may be missed.
 - **Image hotlinking** — candidate images in the composer are loaded from their original remote URLs before save. Some CDNs block cross-origin loads; broken images are hidden automatically.
-- **Popup blocker** — browsers may block the popup if the fetch takes too long. Whitelist your Clipper host in popup settings if this happens.
 - **Clip TTL** — unsaved clips are stored in memory only and expire after 1 hour. Restarting the server also clears them.
 - **No authentication** — any request with a valid ID can view a composer page or saved post. Do not use in a shared environment until auth is added.
