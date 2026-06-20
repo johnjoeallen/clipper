@@ -2,6 +2,8 @@
 
 A browser bookmarklet and Spring Boot app for saving web page clips. Click the bookmarklet on any page and Clipper captures the title, URL, Open Graph metadata, tags, selected text, page body text, candidate images, and related links directly from the live DOM — no server-side scraping required. A two-step popup composer lets you review and curate the clip before submitting. When you save, Clipper downloads and caches the selected images locally so saved cards render from your own copy — independent of the original site.
 
+![Clipper screenshot](images/screenshot.png)
+
 ---
 
 ## How it works
